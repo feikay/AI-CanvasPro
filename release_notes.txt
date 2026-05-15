@@ -7,7 +7,7 @@
 操作方式：我的电脑地址栏输入：%AppData% 会跳转到对应目录 删掉AI-CanvasPro字样的所有文件夹即可 
 %LOCALAPPDATA% 也是一样操作
 
-[previewVideoUrl]: https://www.bilibili.com/video/BV17soQB7EwB/
+[previewVideoUrl]: https://www.bilibili.com/video/BV1RX5z6gEXq/
 
 ✨ 新增功能：
 - 完善 工作流功能
