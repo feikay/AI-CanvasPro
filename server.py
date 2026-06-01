@@ -85,6 +85,9 @@ SMART_CLIP_MAX_SEGMENTS = 25
 SMART_CLIP_DEFAULT_SEGMENTS = 20
 SMART_CLIP_FPS_OPTIONS = (16, 24, 30)
 SMART_CLIP_DEFAULT_FPS = 24
+SMART_CLIP_OUTPUT_MODE_SEGMENTS = "videoSegments"
+SMART_CLIP_OUTPUT_MODE_KEYFRAMES = "keyframes"
+SMART_CLIP_DEFAULT_OUTPUT_MODE = SMART_CLIP_OUTPUT_MODE_SEGMENTS
 DERIVED_STATIC_MEDIA_PREFIXES = (
     "/data/uploads/_derived/",
     "/data/assets/_derived/",
@@ -245,6 +248,12 @@ def _normalize_smart_clip_fps(value):
     except Exception:
         fps = SMART_CLIP_DEFAULT_FPS
     return fps if fps in SMART_CLIP_FPS_OPTIONS else SMART_CLIP_DEFAULT_FPS
+
+def _normalize_smart_clip_output_mode(value):
+    raw = str(value or "").strip()
+    if raw == SMART_CLIP_OUTPUT_MODE_KEYFRAMES:
+        return SMART_CLIP_OUTPUT_MODE_KEYFRAMES
+    return SMART_CLIP_DEFAULT_OUTPUT_MODE
 
 # --- 可配置的数据目录，默认位于 v2/ 下 ---
 DEFAULT_USER_DIR = _get_path_env("AIC_USER_DIR", os.path.join(DIRECTORY, "user"))
@@ -1523,7 +1532,7 @@ def _json_ok(handler, data):
     handler.end_headers()
     try:
         handler.wfile.write(body)
-    except (BrokenPipeError, ConnectionResetError):
+    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
         pass
 
 def _json_err(handler, code, msg):
@@ -1535,7 +1544,7 @@ def _json_err(handler, code, msg):
     handler.end_headers()
     try:
         handler.wfile.write(body)
-    except (BrokenPipeError, ConnectionResetError):
+    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
         pass
 
 
@@ -1573,7 +1582,7 @@ def _send_route_response(handler, response):
         handler.end_headers()
         try:
             handler.wfile.write(body)
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             pass
         return
     raise ValueError(f"Unknown route response kind: {kind}")
@@ -1836,6 +1845,10 @@ def _run_smart_clip_job(job_id, local_src, options):
         output_fps = _normalize_smart_clip_fps(
             opt.get("fps", opt.get("frameRate", SMART_CLIP_DEFAULT_FPS))
         )
+        output_mode = _normalize_smart_clip_output_mode(
+            opt.get("outputMode", opt.get("outputType", opt.get("resultType")))
+        )
+        output_keyframes = output_mode == SMART_CLIP_OUTPUT_MODE_KEYFRAMES
 
         try:
             black_luma_thr = float(opt.get("blackLuma", 16.0))
@@ -1880,6 +1893,38 @@ def _run_smart_clip_job(job_id, local_src, options):
                 return float(txt) if txt else 0.0
             except Exception:
                 return 0.0
+
+        def _ffprobe_video_size(p):
+            try:
+                cmd = [
+                    FFPROBE_EXE,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height",
+                    "-of",
+                    "json",
+                    p,
+                ]
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    startupinfo=startupinfo,
+                )
+                stdout, _ = process.communicate(timeout=20)
+                if process.returncode != 0:
+                    return 0, 0
+                data = json.loads((stdout or b"{}").decode("utf-8", errors="ignore") or "{}")
+                streams = data.get("streams") if isinstance(data, dict) else None
+                stream = streams[0] if isinstance(streams, list) and streams else {}
+                width = int(stream.get("width") or 0)
+                height = int(stream.get("height") or 0)
+                return max(0, width), max(0, height)
+            except Exception:
+                return 0, 0
 
         duration_sec = _ffprobe_duration_sec(local_src)
         if not duration_sec or duration_sec <= 0:
@@ -2124,16 +2169,30 @@ def _run_smart_clip_job(job_id, local_src, options):
             segments2 = _equal_split(duration_sec, max_segments)
 
         if len(segments2) <= 1:
-            _smart_clip_update(job_id, status="done", stage="done", progress=1.0, segments=[])
+            _smart_clip_update(
+                job_id,
+                status="done",
+                stage="done",
+                progress=1.0,
+                segments=[],
+                outputMode=output_mode,
+            )
             return
 
         segments = []
         for i, (s, e) in enumerate(segments2):
             segments.append({"index": i + 1, "start": s, "end": e, "duration": e - s})
 
-        _smart_clip_update(job_id, stage="cut", progress=0.05, total=len(segments))
+        _smart_clip_update(
+            job_id,
+            stage="frame" if output_keyframes else "cut",
+            progress=0.05,
+            total=len(segments),
+            outputMode=output_mode,
+        )
 
-        out_dir = os.path.join(OUTPUT_DIR, "SceneCuts", job_id)
+        out_dir_name = "SceneKeyframes" if output_keyframes else "SceneCuts"
+        out_dir = os.path.join(OUTPUT_DIR, out_dir_name, job_id)
         os.makedirs(out_dir, exist_ok=True)
 
         out_segments = []
@@ -2144,29 +2203,48 @@ def _run_smart_clip_job(job_id, local_src, options):
             dur = max(0.01, e - s)
             ms_s = int(round(s * 1000))
             ms_e = int(round(e * 1000))
-            filename = f"scene_{idx+1:03d}_{ms_s}-{ms_e}.mp4"
+            filename = (
+                f"scene_{idx+1:03d}_{ms_s}.jpg"
+                if output_keyframes
+                else f"scene_{idx+1:03d}_{ms_s}-{ms_e}.mp4"
+            )
             out_path = os.path.join(out_dir, filename)
 
-            cmd = [
-                FFMPEG_EXE,
-                "-y",
-                "-i",
-                local_src,
-                "-ss",
-                str(s),
-                "-t",
-                str(dur),
-                "-c:v",
-                "libx264",
-                "-preset",
-                "fast",
-                "-c:a",
-                "aac",
-                out_path,
-            ]
-            if fps_str:
-                cmd.insert(-1, "-r")
-                cmd.insert(-1, fps_str)
+            if output_keyframes:
+                cmd = [
+                    FFMPEG_EXE,
+                    "-y",
+                    "-ss",
+                    str(s),
+                    "-i",
+                    local_src,
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "2",
+                    out_path,
+                ]
+            else:
+                cmd = [
+                    FFMPEG_EXE,
+                    "-y",
+                    "-ss",
+                    str(s),
+                    "-i",
+                    local_src,
+                    "-t",
+                    str(dur),
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "fast",
+                    "-c:a",
+                    "aac",
+                    out_path,
+                ]
+                if fps_str:
+                    cmd.insert(-1, "-r")
+                    cmd.insert(-1, fps_str)
 
             process = subprocess.Popen(
                 cmd,
@@ -2178,34 +2256,67 @@ def _run_smart_clip_job(job_id, local_src, options):
                 _, stderr = process.communicate(timeout=300)
             except subprocess.TimeoutExpired:
                 process.kill()
-                _smart_clip_update(job_id, status="error", stage="cut", error="FFmpeg process timeout")
+                _smart_clip_update(
+                    job_id,
+                    status="error",
+                    stage="frame" if output_keyframes else "cut",
+                    error="FFmpeg process timeout",
+                )
                 return
             if process.returncode != 0:
                 try:
                     err_text = (stderr or b"").decode("utf-8", errors="ignore").strip()
                 except Exception:
                     err_text = ""
-                _smart_clip_update(job_id, status="error", stage="cut", error=f"FFmpeg processing failed: {err_text or 'unknown error'}")
+                _smart_clip_update(
+                    job_id,
+                    status="error",
+                    stage="frame" if output_keyframes else "cut",
+                    error=f"FFmpeg processing failed: {err_text or 'unknown error'}",
+                )
                 return
 
-            rel = f"output/SceneCuts/{job_id}/{filename}"
-            out_segments.append(
-                {
-                    "index": idx + 1,
-                    "start": s,
-                    "end": e,
-                    "duration": dur,
-                    "fps": output_fps,
-                    "path": rel,
-                    "localPath": rel,
-                    "url": f"/{rel}",
-                }
-            )
+            rel = f"output/{out_dir_name}/{job_id}/{filename}"
+            segment_result = {
+                "index": idx + 1,
+                "start": s,
+                "end": e,
+                "duration": dur,
+                "fps": output_fps,
+                "path": rel,
+                "localPath": rel,
+                "url": f"/{rel}",
+            }
+            if output_keyframes:
+                width, height = _ffprobe_video_size(out_path)
+                segment_result.update(
+                    {
+                        "fileName": filename,
+                        "outputType": "image",
+                        "width": width,
+                        "height": height,
+                    }
+                )
+            out_segments.append(segment_result)
 
             p = 0.05 + 0.95 * float(idx + 1) / float(total)
-            _smart_clip_update(job_id, stage="cut", progress=min(0.999, p), doneCount=idx + 1, total=total)
+            _smart_clip_update(
+                job_id,
+                stage="frame" if output_keyframes else "cut",
+                progress=min(0.999, p),
+                doneCount=idx + 1,
+                total=total,
+                outputMode=output_mode,
+            )
 
-        _smart_clip_update(job_id, status="done", stage="done", progress=1.0, segments=out_segments)
+        _smart_clip_update(
+            job_id,
+            status="done",
+            stage="done",
+            progress=1.0,
+            segments=out_segments,
+            outputMode=output_mode,
+        )
     except Exception as e:
         _smart_clip_update(job_id, status="error", stage="error", error=str(e))
 
@@ -2517,6 +2628,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 filename = "upload.bin"
                 file_content_type = "application/octet-stream"
                 file_extension = ""
+                api_key = ""
+                api_url = "https://api.apimart.ai"
                 permanent = False
                 file_bytes = b""
 
@@ -2548,7 +2661,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                             type_match = re.search(r"Content-Type:\s*([^\r\n;]+)", header_blob, flags=re.IGNORECASE)
                             if type_match and type_match.group(1).strip():
                                 file_content_type = type_match.group(1).strip()
-                        elif field_name in ("contentType", "fileExtension", "permanent"):
+                        elif field_name in ("contentType", "fileExtension", "permanent", "apiKey", "apiUrl"):
                             value = data_blob.decode("utf-8", "ignore").strip()
                             if field_name == "contentType" and value:
                                 file_content_type = value
@@ -2556,6 +2669,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                 file_extension = value.lstrip(".")
                             elif field_name == "permanent":
                                 permanent = value.lower() in ("1", "true", "yes", "on")
+                            elif field_name == "apiKey":
+                                api_key = re.sub(r"^Bearer\s+", "", value, flags=re.IGNORECASE).strip()
+                            elif field_name == "apiUrl" and value:
+                                api_url = re.sub(r"/v1/?$", "", value.rstrip("/"), flags=re.IGNORECASE)
                 else:
                     file_bytes = body
                     file_content_type = content_type_header.split(";", 1)[0].strip() or file_content_type
@@ -2566,6 +2683,80 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     file_extension = (os.path.splitext(filename)[1] or "").lstrip(".")
                 if not file_extension:
                     file_extension = (mimetypes.guess_extension(file_content_type) or ".bin").lstrip(".")
+
+                if api_key and file_content_type.lower().startswith("image/"):
+                    normalized_api_url = re.sub(
+                        r"/v1/?$",
+                        "",
+                        str(api_url or 'https://api.apimart.ai').strip().rstrip("/"),
+                        flags=re.IGNORECASE,
+                    )
+                    upload_url = f"{normalized_api_url}/v1/uploads/images"
+                    try:
+                        import requests as _req
+                        resp = _req.post(
+                            upload_url,
+                            headers={
+                                "Authorization": f"Bearer {api_key}",
+                                "User-Agent": "Mozilla/5.0",
+                            },
+                            files={
+                                "file": (
+                                    filename,
+                                    file_bytes,
+                                    file_content_type,
+                                )
+                            },
+                            timeout=300,
+                        )
+                        content = resp.content
+                        self.send_response(resp.status_code)
+                        self.send_header(
+                            "Content-Type",
+                            resp.headers.get("Content-Type") or "application/json; charset=utf-8",
+                        )
+                        _send_cors_origin_header(self)
+                        self.send_header("Content-Length", str(len(content)))
+                        self.end_headers()
+                        self.wfile.write(content)
+                    except ImportError:
+                        boundary = f"----AICanvasAPIMartUpload{random.randint(100000, 999999)}"
+                        safe_filename = filename.replace('"', "_")
+                        body_prefix = (
+                            f"--{boundary}\r\n"
+                            f'Content-Disposition: form-data; name="file"; filename="{safe_filename}"\r\n'
+                            f"Content-Type: {file_content_type}\r\n\r\n"
+                        ).encode("utf-8")
+                        body_suffix = f"\r\n--{boundary}--\r\n".encode("utf-8")
+                        req_body = body_prefix + file_bytes + body_suffix
+                        req = urllib.request.Request(
+                            upload_url,
+                            data=req_body,
+                            headers={
+                                "Authorization": f"Bearer {api_key}",
+                                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                                "User-Agent": "Mozilla/5.0",
+                            },
+                            method="POST",
+                        )
+                        try:
+                            with urllib.request.urlopen(req, timeout=300) as resp:
+                                content = resp.read()
+                                status = resp.status
+                                content_type = resp.headers.get("Content-Type") or "application/json; charset=utf-8"
+                        except urllib.error.HTTPError as exc:
+                            content = exc.read()
+                            status = exc.code
+                            content_type = exc.headers.get("Content-Type") or "application/json; charset=utf-8"
+                        self.send_response(status)
+                        self.send_header("Content-Type", content_type)
+                        _send_cors_origin_header(self)
+                        self.send_header("Content-Length", str(len(content)))
+                        self.end_headers()
+                        self.wfile.write(content)
+                    except Exception as e:
+                        _json_err(self, 500, f"APIMART official upload error: {repr(e)}")
+                    return
 
                 presign_payload = {
                     "contentType": file_content_type,
@@ -2648,6 +2839,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             options = data.get("options") or {}
             if not isinstance(options, dict):
                 options = {}
+            output_mode = _normalize_smart_clip_output_mode(
+                options.get("outputMode", options.get("outputType", options.get("resultType")))
+            )
 
             if not src_path:
                 _json_err(self, 400, "Missing src")
@@ -2678,6 +2872,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     "stage": "queued",
                     "progress": 0.0,
                     "segments": None,
+                    "outputMode": output_mode,
                     "error": None,
                     "createdAt": created_at,
                 }
@@ -3371,14 +3566,34 @@ def _display_urls(bind_host, port):
 
 
 # --- 启动 ---
+def _is_benign_client_disconnect_error(error):
+    current = error
+    seen = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
+            return True
+        current = getattr(current, "__context__", None) or getattr(current, "__cause__", None)
+    return False
+
+
+class QuietThreadingTCPServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+
+    def handle_error(self, request, client_address):
+        error = sys.exc_info()[1]
+        if _is_benign_client_disconnect_error(error):
+            return
+        super().handle_error(request, client_address)
+
+
 if __name__ == "__main__":
     # 后台启动自动更新检查
     _t = threading.Thread(target=UPDATE_SERVICE.update_check_loop, daemon=True, name='AutoUpdateChecker')
     _t.start()
     port, requested_bind_host, lan_mode = _parse_server_args(sys.argv[1:])
     bind_host, bind_host_was_restricted = _resolve_bind_host(requested_bind_host, lan_mode)
-    with socketserver.ThreadingTCPServer((bind_host, port), Handler) as httpd:
-        httpd.allow_reuse_address = True
+    with QuietThreadingTCPServer((bind_host, port), Handler) as httpd:
         print("=" * 56)
         if SUBSCRIPTION_API_BASE_OVERRIDDEN:
             print(f"[subscription] api base override enabled: {SUBSCRIPTION_API_BASE}")

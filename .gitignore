@@ -7,7 +7,9 @@ user-data/
 output/
 data/
 release/
+site/
 logs/
+/*.png
 
 venv/
 
@@ -24,6 +26,7 @@ dist-obfuscated/
 playwright-report/
 test-results/
 .playwright/
+test-artifacts/
 
 dev-helper.js
 .agent/

@@ -23,6 +23,7 @@ class DreaminaCliService:
     _DEFAULT_LOGIN_TIMEOUT_SEC = 90
     _LOGIN_PAGE_URL = "https://jimeng.jianying.com/"
     _ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-9;?]*[ -/]*[@-~]")
+    _OAUTH_VALUE_RE_TEMPLATE = r"(?i)(?:^|[\s,{{]){key}\s*[:=]\s*['\"]?([^'\"\s,;}}]+)"
 
     def __init__(
         self,
@@ -83,7 +84,8 @@ class DreaminaCliService:
             "qrUpdatedAt": 0,
             "verificationUrl": "",
             "userCode": "",
-            "loginMode": "headless",
+            "deviceCode": "",
+            "loginMode": "oauth",
             "loginPageUrl": self._LOGIN_PAGE_URL,
             "authorizeUrl": "",
             "callbackUrl": "",
@@ -108,7 +110,7 @@ class DreaminaCliService:
             raw = {}
         return {
             "commandPath": str(raw.get("commandPath") or raw.get("command") or "").strip(),
-            "loginMode": str(raw.get("loginMode") or "headless").strip().lower() or "headless",
+            "loginMode": str(raw.get("loginMode") or "oauth").strip().lower() or "oauth",
         }
 
     def _candidate_commands(self):
@@ -154,7 +156,7 @@ class DreaminaCliService:
         if "读取二维码响应失败" in text or "empty response body" in lower:
             return "即梦二维码获取失败，请重新点击登录"
         if "等待登录超时" in text:
-            return "扫码登录已超时，请重新点击登录"
+            return "即梦登录已超时，请重新点击登录"
         return text
 
     def _run_command(self, args, timeout=30, command_path=""):
@@ -217,6 +219,77 @@ class DreaminaCliService:
         if len(tail) > 80:
             del tail[: len(tail) - 80]
         self._sync_manual_login_links_locked()
+
+    def _extract_oauth_labeled_value(self, text, keys):
+        raw = self._ANSI_ESCAPE_RE.sub("", str(text or ""))
+        for key in keys:
+            pattern = self._OAUTH_VALUE_RE_TEMPLATE.format(key=re.escape(str(key)))
+            match = re.search(pattern, raw)
+            if match:
+                return str(match.group(1) or "").strip()
+        return ""
+
+    def _extract_oauth_material_from_text(self, text):
+        raw = self._ANSI_ESCAPE_RE.sub("", str(text or ""))
+        material = {}
+        parsed = self._parse_json_from_output(raw)
+        if isinstance(parsed, dict) and parsed:
+            for target_key, source_keys in (
+                ("verificationUrl", ("verification_uri_complete", "verification_url", "verification_uri")),
+                ("userCode", ("user_code", "userCode")),
+                ("deviceCode", ("device_code", "deviceCode")),
+            ):
+                for source_key in source_keys:
+                    value = str(parsed.get(source_key) or "").strip()
+                    if value:
+                        material[target_key] = value
+                        break
+
+        verification_url = self._extract_oauth_labeled_value(
+            raw,
+            ("verification_uri_complete", "verification_url", "verification_uri"),
+        )
+        user_code = self._extract_oauth_labeled_value(raw, ("user_code", "userCode"))
+        device_code = self._extract_oauth_labeled_value(raw, ("device_code", "deviceCode"))
+        if verification_url:
+            material["verificationUrl"] = self._normalize_manual_url_candidate(verification_url)
+        if user_code:
+            material["userCode"] = user_code
+        if device_code:
+            material["deviceCode"] = device_code
+        return material
+
+    def _sync_oauth_material_locked(self, text):
+        material = self._extract_oauth_material_from_text(text)
+        if not material:
+            return False
+        runtime = self._login_runtime
+        verification_url = self._normalize_manual_url_candidate(
+            material.get("verificationUrl")
+        )
+        if verification_url:
+            runtime["verificationUrl"] = verification_url
+            runtime["authorizeUrl"] = verification_url
+        user_code = str(material.get("userCode") or "").strip()
+        if user_code:
+            runtime["userCode"] = user_code
+        device_code = str(material.get("deviceCode") or "").strip()
+        if device_code:
+            runtime["deviceCode"] = device_code
+        runtime["manualLoginAvailable"] = bool(
+            runtime.get("authorizeUrl") or runtime.get("verificationUrl")
+        )
+        runtime["phase"] = "oauth_ready"
+        runtime["error"] = ""
+        runtime["message"] = self._build_oauth_waiting_message_locked()
+        return True
+
+    def _build_oauth_waiting_message_locked(self):
+        runtime = self._login_runtime
+        user_code = str(runtime.get("userCode") or "").strip()
+        if user_code:
+            return f"请打开即梦授权链接，并输入验证码：{user_code}"
+        return "请打开即梦授权链接完成授权"
 
     def _normalize_manual_url_candidate(self, url):
         value = str(url or "").strip()
@@ -307,7 +380,8 @@ class DreaminaCliService:
             "qrUpdatedAt": int(runtime.get("qrUpdatedAt") or 0),
             "verificationUrl": str(runtime.get("verificationUrl") or ""),
             "userCode": str(runtime.get("userCode") or ""),
-            "loginMode": str(runtime.get("loginMode") or "headless"),
+            "deviceCodeAvailable": bool(str(runtime.get("deviceCode") or "").strip()),
+            "loginMode": str(runtime.get("loginMode") or "oauth"),
             "loginPageUrl": str(runtime.get("loginPageUrl") or self._LOGIN_PAGE_URL),
             "authorizeUrl": str(runtime.get("authorizeUrl") or ""),
             "callbackUrl": str(runtime.get("callbackUrl") or ""),
@@ -355,7 +429,7 @@ class DreaminaCliService:
         )
         runtime["error"] = ""
 
-    def _finalize_login_runtime(self, returncode):
+    def _finalize_login_runtime(self, returncode, success_on_zero=False):
         with self._lock:
             runtime = self._login_runtime
             runtime["active"] = False
@@ -364,6 +438,10 @@ class DreaminaCliService:
             phase = runtime.get("phase") or "idle"
             if phase in ("success", "reused"):
                 self._credit_cache = None
+                return
+            if returncode == 0 and success_on_zero:
+                self._credit_cache = None
+                self._mark_login_success(reused=False)
                 return
             if returncode == 0:
                 runtime["phase"] = "done"
@@ -377,7 +455,8 @@ class DreaminaCliService:
             )
             runtime["message"] = runtime["error"] or "即梦登录失败，请重试"
 
-    def _monitor_login_process(self, proc):
+    def _monitor_login_process(self, proc, *, finalize=True, success_on_zero=False):
+        returncode = -1
         try:
             while True:
                 line = proc.stdout.readline() if proc.stdout else ""
@@ -397,29 +476,10 @@ class DreaminaCliService:
                         self._mark_login_success(reused=False)
                     elif self._LOGIN_REUSED_MARKER in clean_line:
                         self._mark_login_success(reused=True)
-                    elif "verification_uri:" in clean_line:
-                        url = self._normalize_manual_url_candidate(
-                            clean_line.split("verification_uri:", 1)[1].strip()
-                        )
-                        if url:
-                            self._login_runtime["phase"] = "qr_ready"
-                            self._login_runtime["verificationUrl"] = url
-                            self._login_runtime["authorizeUrl"] = url
-                            self._login_runtime["manualLoginAvailable"] = True
-                            self._login_runtime["message"] = "请在浏览器中打开即梦登录链接完成授权"
-                            self._login_runtime["error"] = ""
-                    elif "user_code:" in clean_line:
-                        code = clean_line.split("user_code:", 1)[1].strip()
-                        self._login_runtime["userCode"] = code
-                        self._login_runtime["phase"] = "qr_ready"
-                        self._login_runtime["message"] = f"请在浏览器中完成即梦授权，验证码：{code}"
-                        self._login_runtime["error"] = ""
+                    elif self._sync_oauth_material_locked(clean_line):
+                        pass
                     elif self._login_runtime.get("phase") in ("preparing", "starting"):
-                        self._login_runtime["message"] = (
-                            "即梦网页登录已启动，正在等待授权链接"
-                            if self._login_runtime.get("loginMode") == "web"
-                            else "即梦登录已启动，正在等待二维码"
-                        )
+                        self._login_runtime["message"] = "即梦登录已启动，正在等待授权链接"
                         self._login_runtime["phase"] = "starting"
         finally:
             try:
@@ -430,10 +490,15 @@ class DreaminaCliService:
                     returncode = proc.wait(timeout=3)
                 except Exception:
                     returncode = -1
-            self._finalize_login_runtime(returncode)
+            if finalize:
+                self._finalize_login_runtime(
+                    returncode,
+                    success_on_zero=success_on_zero,
+                )
             with self._lock:
                 if self._active_login_proc is proc:
                     self._active_login_proc = None
+        return returncode
 
     def _mark_login_timeout(self, timeout_sec):
         timeout_sec = max(30, int(timeout_sec or 0))
@@ -447,7 +512,7 @@ class DreaminaCliService:
             self._append_runtime_output(timeout_message)
             self._login_runtime["phase"] = "failed"
             self._login_runtime["error"] = timeout_message
-            self._login_runtime["message"] = "扫码登录超时，正在结束本次登录流程..."
+            self._login_runtime["message"] = "即梦登录超时，正在结束本次登录流程..."
 
     def _terminate_login_process(self, proc):
         if proc is None:
@@ -516,9 +581,9 @@ class DreaminaCliService:
 
     def _is_headless_login_command(self, command_line):
         normalized = f" {str(command_line or '').replace(chr(34), '').lower()} "
-        if "--headless" not in normalized:
-            return False
-        return " login " in normalized or " relogin " in normalized
+        if "--headless" in normalized and (" login " in normalized or " relogin " in normalized):
+            return True
+        return " checklogin " in normalized and "--device_code" in normalized
 
     def _terminate_process_tree(self, pid):
         if os.name != "nt":
@@ -1843,10 +1908,70 @@ class DreaminaCliService:
             response["failReason"] = fail_reason
         return response
 
+    def _normalize_login_mode(self, mode):
+        raw = str(mode or "oauth").strip().lower() or "oauth"
+        if raw in ("oauth", "web", "headless", "device", "device_flow"):
+            return "oauth"
+        raise RuntimeError("当前仅支持即梦 OAuth 登录")
+
+    def _get_active_login_proc(self):
+        with self._lock:
+            return self._active_login_proc
+
+    def _get_runtime_phase(self):
+        with self._lock:
+            return str(self._login_runtime.get("phase") or "")
+
+    def _get_runtime_device_code(self):
+        with self._lock:
+            return str(self._login_runtime.get("deviceCode") or "").strip()
+
+    def _start_login_subprocess(self, command_path, args):
+        creation_flags = 0
+        if os.name == "nt":
+            creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        proc = subprocess.Popen(
+            [command_path, *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=self._create_subprocess_env(),
+            cwd=self._user_dir,
+            creationflags=creation_flags,
+        )
+        with self._lock:
+            self._active_login_proc = proc
+        return proc
+
+    def _run_oauth_checklogin(self, command_path, device_code, timeout_sec):
+        poll_seconds = max(1, int(timeout_sec or self._DEFAULT_LOGIN_TIMEOUT_SEC))
+        with self._lock:
+            if self._login_runtime.get("phase") not in ("success", "reused"):
+                self._login_runtime["phase"] = "polling"
+                self._login_runtime["message"] = self._build_oauth_waiting_message_locked()
+                self._login_runtime["error"] = ""
+                self._append_runtime_output("正在等待即梦 OAuth 授权完成...")
+
+        proc = self._start_login_subprocess(
+            command_path,
+            [
+                "login",
+                "checklogin",
+                f"--device_code={device_code}",
+                f"--poll={poll_seconds}",
+            ],
+        )
+        return self._monitor_login_process(
+            proc,
+            finalize=True,
+            success_on_zero=True,
+        )
+
     def _run_login_sequence(self, force=False, mode="headless"):
         try:
-            login_mode = str(mode or "headless").strip().lower() or "headless"
-            is_web_mode = login_mode == "web"
+            login_mode = self._normalize_login_mode(mode)
             cleaned = self._cleanup_stale_login_processes()
             if cleaned:
                 with self._lock:
@@ -1863,34 +1988,13 @@ class DreaminaCliService:
             with self._lock:
                 self._login_runtime["phase"] = "starting"
                 self._login_runtime["loginMode"] = login_mode
-                self._login_runtime["message"] = (
-                    "正在启动即梦网页登录，请在浏览器完成授权..."
-                    if is_web_mode
-                    else "正在启动即梦扫码登录..."
-                )
+                self._login_runtime["message"] = "正在启动即梦 OAuth 登录..."
                 self._sync_manual_login_links_locked()
 
-            creation_flags = 0
-            if os.name == "nt":
-                creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-
-            login_args = [command_path, "relogin" if force else "login"]
-            if not is_web_mode:
-                login_args.append("--headless")
-
-            proc = subprocess.Popen(
-                login_args,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=self._create_subprocess_env(),
-                cwd=self._user_dir,
-                creationflags=creation_flags,
+            proc = self._start_login_subprocess(
+                command_path,
+                ["relogin" if force else "login", "--headless"],
             )
-            with self._lock:
-                self._active_login_proc = proc
             timeout_marker = threading.Event()
             timeout_sec = int(self._login_timeout_sec or self._DEFAULT_LOGIN_TIMEOUT_SEC)
 
@@ -1898,23 +2002,30 @@ class DreaminaCliService:
                 if timeout_marker.is_set():
                     return
                 self._mark_login_timeout(timeout_sec)
-                self._terminate_login_process(proc)
+                self._terminate_login_process(self._get_active_login_proc())
 
             timeout_timer = threading.Timer(timeout_sec, on_timeout)
             timeout_timer.daemon = True
             timeout_timer.start()
             try:
-                self._monitor_login_process(proc)
+                returncode = self._monitor_login_process(proc, finalize=False)
+                phase = self._get_runtime_phase()
+                if phase in ("success", "reused") or returncode != 0:
+                    self._finalize_login_runtime(returncode)
+                    return
+                device_code = self._get_runtime_device_code()
+                if not device_code:
+                    self._finalize_login_runtime(returncode)
+                    return
+                self._run_oauth_checklogin(command_path, device_code, timeout_sec)
             finally:
                 timeout_marker.set()
                 timeout_timer.cancel()
         except Exception as exc:
             self._set_runtime_failure(str(exc) or "即梦登录失败")
 
-    def start_login(self, force=False, mode="headless"):
-        login_mode = str(mode or "headless").strip().lower() or "headless"
-        if login_mode not in ("headless", "web"):
-            raise RuntimeError("当前仅支持网页登录或扫码登录")
+    def start_login(self, force=False, mode="oauth"):
+        login_mode = self._normalize_login_mode(mode)
 
         with self._lock:
             if self._login_runtime.get("active"):
@@ -1922,11 +2033,7 @@ class DreaminaCliService:
             self._credit_cache = None
             self._reset_runtime_locked(
                 phase="preparing",
-                message=(
-                    "正在准备即梦网页登录..."
-                    if login_mode == "web"
-                    else "正在准备即梦扫码登录..."
-                ),
+                message="正在准备即梦 OAuth 登录...",
                 active=True,
             )
             self._login_runtime["loginMode"] = login_mode
@@ -1936,7 +2043,7 @@ class DreaminaCliService:
             target=self._run_login_sequence,
             args=(bool(force), login_mode),
             daemon=True,
-            name="DreaminaWebLogin" if login_mode == "web" else "DreaminaHeadlessLogin",
+            name="DreaminaOAuthLogin",
         )
         worker.start()
         return self.get_login_runtime()

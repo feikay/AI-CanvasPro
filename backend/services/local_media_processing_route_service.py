@@ -7,6 +7,8 @@ import time
 
 
 VIDEO_CLIP_FPS_OPTIONS = (16, 24, 30)
+STORYBOARD_FRAME_MAX_COUNT = 30
+STORYBOARD_FRAME_DEFAULT_COUNT = 30
 
 
 class LocalMediaProcessingRouteService:
@@ -246,6 +248,263 @@ class LocalMediaProcessingRouteService:
             return None
         return width, height
 
+    @staticmethod
+    def _normalize_storyboard_frame_count(value):
+        try:
+            count = int(round(float(value)))
+        except Exception:
+            count = STORYBOARD_FRAME_DEFAULT_COUNT
+        return max(1, min(STORYBOARD_FRAME_MAX_COUNT, count))
+
+    @staticmethod
+    def _format_storyboard_frame_time(value):
+        try:
+            number = max(0.0, float(value))
+        except Exception:
+            number = 0.0
+        return f"{number:.3f}".rstrip("0").rstrip(".") or "0"
+
+    def _ffprobe_duration_sec(self, path, startupinfo):
+        cmd = [
+            self._ffprobe(),
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=nw=1:nk=1",
+            path,
+        ]
+        returncode, stdout, _ = self._run_process(
+            cmd,
+            timeout=20,
+            startupinfo=startupinfo,
+        )
+        if returncode != 0:
+            return 0.0
+        text = (stdout or b"").decode("utf-8", errors="ignore").strip()
+        try:
+            duration = float(text) if text else 0.0
+        except Exception:
+            duration = 0.0
+        return duration if duration > 0 else 0.0
+
+    @staticmethod
+    def _merge_storyboard_segments_to_limit(segments, limit):
+        out = [list(seg) for seg in (segments or []) if len(seg) >= 2 and seg[1] > seg[0]]
+        if limit <= 0:
+            return []
+        while len(out) > int(limit):
+            shortest_i = min(
+                range(len(out)),
+                key=lambda index: float(out[index][1]) - float(out[index][0]),
+            )
+            if len(out) <= 1:
+                break
+            if shortest_i == 0:
+                out[1] = [out[0][0], out[1][1]]
+                out.pop(0)
+            elif shortest_i == len(out) - 1:
+                out[-2] = [out[-2][0], out[-1][1]]
+                out.pop()
+            else:
+                left_d = out[shortest_i - 1][1] - out[shortest_i - 1][0]
+                right_d = out[shortest_i + 1][1] - out[shortest_i + 1][0]
+                if left_d <= right_d:
+                    out[shortest_i - 1] = [out[shortest_i - 1][0], out[shortest_i][1]]
+                    out.pop(shortest_i)
+                else:
+                    out[shortest_i + 1] = [out[shortest_i][0], out[shortest_i + 1][1]]
+                    out.pop(shortest_i)
+        return out
+
+    @staticmethod
+    def _build_equal_storyboard_segments(duration_sec, count):
+        if count <= 0:
+            return []
+        if not duration_sec or duration_sec <= 0:
+            return [[0.0, 0.0]]
+        step = float(duration_sec) / float(count)
+        segments = []
+        for index in range(count):
+            start = step * index
+            end = float(duration_sec) if index == count - 1 else min(float(duration_sec), start + step)
+            if end >= start:
+                segments.append([float(start), float(end)])
+        return segments
+
+    def _detect_storyboard_scene_segments(self, local_src, duration_sec, count):
+        try:
+            from scenedetect import open_video, SceneManager
+            from scenedetect.detectors import ContentDetector
+        except Exception:
+            return []
+
+        try:
+            video = open_video(local_src)
+            try:
+                fps = float(getattr(video, "frame_rate", 0.0) or 0.0)
+            except Exception:
+                fps = 0.0
+            if not fps or fps <= 0:
+                fps = 30.0
+
+            scene_manager = SceneManager()
+            min_scene_len = max(1, int(round(0.6 * fps)))
+            scene_manager.add_detector(
+                ContentDetector(threshold=23.0, min_scene_len=min_scene_len)
+            )
+            scene_manager.detect_scenes(video, show_progress=False)
+            scene_list = scene_manager.get_scene_list() or []
+            segments = []
+            for start_tc, end_tc in scene_list:
+                try:
+                    start = float(start_tc.get_seconds())
+                    end = float(end_tc.get_seconds())
+                except Exception:
+                    continue
+                if end > start:
+                    segments.append([start, end])
+            if len(segments) <= 1:
+                return []
+            return self._merge_storyboard_segments_to_limit(segments, count)
+        except Exception:
+            return []
+
+    def _resolve_storyboard_frame_segments(self, local_src, duration_sec, count, exact_count):
+        if exact_count:
+            return self._build_equal_storyboard_segments(duration_sec, count)
+        detected = self._detect_storyboard_scene_segments(local_src, duration_sec, count)
+        if detected:
+            return detected
+        if duration_sec and duration_sec > 0:
+            auto_count = max(1, int(round(float(duration_sec) / 2.0)))
+            auto_count = min(count, auto_count)
+        else:
+            auto_count = 1
+        return self._build_equal_storyboard_segments(duration_sec, auto_count)
+
+    def _handle_video_storyboard_frames(self, handler):
+        data, error = self._read_json_request(handler)
+        if error is not None:
+            return error
+
+        src_path = (data.get("src") or "").strip()
+        options = data.get("options") if isinstance(data.get("options"), dict) else {}
+        count = self._normalize_storyboard_frame_count(
+            options.get("maxFrames", options.get("frameCount", data.get("maxFrames")))
+        )
+        exact_count = bool(options.get("exactCount") or data.get("exactCount"))
+
+        local_src, error = self._validate_src_path(
+            src_path,
+            missing_message="Source video not found",
+        )
+        if error is not None:
+            return error
+
+        startupinfo = self._startupinfo()
+        try:
+            duration_sec = self._ffprobe_duration_sec(local_src, startupinfo)
+        except subprocess.TimeoutExpired:
+            return self._json_err(504, "FFprobe process timeout")
+        except Exception as exc:
+            return self._json_err(500, f"Error reading video duration: {str(exc)}")
+
+        try:
+            stat_result = os.stat(local_src)
+        except Exception:
+            return self._json_err(500, "Cannot stat source video")
+
+        norm_src = os.path.normpath(src_path.lstrip("/"))
+        signature = (
+            f"{norm_src}|"
+            f"{getattr(stat_result, 'st_mtime_ns', int(stat_result.st_mtime * 1e9))}|"
+            f"{stat_result.st_size}|{count}|{1 if exact_count else 0}"
+        )
+        digest = hashlib.sha1(signature.encode("utf-8", errors="ignore")).hexdigest()[:12]
+        frame_dir = os.path.join(self._output_dir(), "StoryboardFrames", digest)
+        os.makedirs(frame_dir, exist_ok=True)
+
+        segments = self._resolve_storyboard_frame_segments(
+            local_src,
+            duration_sec,
+            count,
+            exact_count,
+        )
+        if not segments:
+            return self._json_err(500, "No storyboard frames could be resolved")
+
+        frames = []
+        for index, (start, end) in enumerate(segments[:count]):
+            start = max(0.0, float(start))
+            end = max(start, float(end))
+            duration = max(0.0, end - start)
+            offset = min(0.2, duration * 0.1) if duration > 0 else 0.0
+            capture_time = start + offset
+            if duration > 0:
+                capture_time = min(max(start, capture_time), max(start, end - 0.001))
+
+            start_tag = int(round(start * 1000))
+            end_tag = int(round(end * 1000))
+            filename = f"frame_{index + 1:03d}_{start_tag}-{end_tag}.jpg"
+            out_path = os.path.join(frame_dir, filename)
+
+            if not os.path.exists(out_path):
+                cmd = [
+                    self._ffmpeg(),
+                    "-y",
+                    "-ss",
+                    self._format_storyboard_frame_time(capture_time),
+                    "-i",
+                    local_src,
+                    "-frames:v",
+                    "1",
+                    "-vf",
+                    "scale=480:-2",
+                    "-q:v",
+                    "5",
+                    "-an",
+                    out_path,
+                ]
+                try:
+                    returncode, _, stderr = self._run_process(
+                        cmd,
+                        timeout=45,
+                        startupinfo=startupinfo,
+                    )
+                except subprocess.TimeoutExpired:
+                    return self._json_err(504, "FFmpeg process timeout")
+                if returncode != 0:
+                    print(
+                        f"FFmpeg storyboard frame error: {(stderr or b'').decode('utf-8', errors='ignore')}"
+                    )
+                    return self._json_err(500, "FFmpeg processing failed")
+
+            rel_path = f"output/StoryboardFrames/{digest}/{filename}"
+            frames.append(
+                {
+                    "index": index + 1,
+                    "start": start,
+                    "end": end,
+                    "duration": duration,
+                    "captureTime": capture_time,
+                    "path": rel_path,
+                    "localPath": rel_path,
+                    "url": "/" + rel_path,
+                }
+            )
+
+        return self._json_ok(
+            {
+                "success": True,
+                "src": src_path,
+                "duration": duration_sec,
+                "count": len(frames),
+                "frames": frames,
+            }
+        )
+
     def _handle_video_cut(self, handler):
         data, error = self._read_json_request(handler)
         if error is not None:
@@ -279,12 +538,12 @@ class LocalMediaProcessingRouteService:
             cmd = [
                 self._ffmpeg(),
                 "-y",
-                "-i",
-                local_src,
                 "-ss",
                 str(start_sec),
                 "-t",
                 str(end_sec - start_sec),
+                "-i",
+                local_src,
                 "-c:v",
                 "libx264",
                 "-preset",
@@ -294,7 +553,7 @@ class LocalMediaProcessingRouteService:
                 out_path,
             ]
             startupinfo = self._startupinfo()
-            fps_int = requested_fps or self._ffprobe_video_fps_int(local_src, startupinfo)
+            fps_int = requested_fps
             if fps_int:
                 cmd.insert(-1, "-r")
                 cmd.insert(-1, str(fps_int))
@@ -307,16 +566,16 @@ class LocalMediaProcessingRouteService:
             if returncode != 0:
                 print(f"FFmpeg error: {stderr.decode('utf-8', errors='ignore')}")
                 return self._json_err(500, "FFmpeg processing failed")
-            return self._json_ok(
-                {
-                    "success": True,
-                    "filename": filename,
-                    "path": f"output/CutVideo/{filename}",
-                    "localPath": f"output/CutVideo/{filename}",
-                    "url": f"/output/CutVideo/{filename}",
-                    "fps": fps_int,
-                }
-            )
+            payload = {
+                "success": True,
+                "filename": filename,
+                "path": f"output/CutVideo/{filename}",
+                "localPath": f"output/CutVideo/{filename}",
+                "url": f"/output/CutVideo/{filename}",
+            }
+            if fps_int:
+                payload["fps"] = fps_int
+            return self._json_ok(payload)
         except subprocess.TimeoutExpired:
             return self._json_err(504, "FFmpeg process timeout")
         except Exception as exc:
@@ -993,4 +1252,6 @@ class LocalMediaProcessingRouteService:
             return self._handle_video_meta(handler)
         if normalized == "/api/v2/video/first_frame":
             return self._handle_video_first_frame(handler)
+        if normalized == "/api/v2/video/storyboard_frames":
+            return self._handle_video_storyboard_frames(handler)
         return None

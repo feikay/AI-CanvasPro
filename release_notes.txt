@@ -1,3 +1,51 @@
+🎉 V0.4.6 版本更新啦！
+
+[previewVideoUrl]: https://www.bilibili.com/video/BV1RX5z6gEXq/
+
+✨ 新增功能：
+- 视频生成节点 runninghub工作流 新增 视频去字幕V2 效果非常好完美无痕 15秒视频大概处理3~5分钟
+- 图像生成节点 runninghub模型 新增 gork4.3 模型
+
+🐛 修复与优化：
+- 修复当生成数量大于1时 如过遇到某一个生成错误会导致其他图片都没有返回的问题
+- 多选视频/组里面有多个视频时 上方栏会出现同步播放按钮 可以同步播放视频
+- 优化多宫格节点加载显示有几率出错的问题
+
+AI-CanvasPro！ windows/mac 应用版本已发布 欢迎体验！ 
+BUG问题或要新增功能反馈文档：https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink
+
+---
+
+🎉 V0.4.5 版本更新啦！
+
+[previewVideoUrl]: https://www.bilibili.com/video/BV1RX5z6gEXq/
+
+✨ 新增功能：
+- 新增 视频节点”提取关键帧“功能 可以把视频的每一个切口的第一帧提取出来作为关键帧图片
+- 新增 “拼图” 节点 双击空白创建 用于图片排版
+- 新增 “故事分镜” 节点 双击空白创建 可以输入故事/故事加人设/视频片段 让AI反推出对应的提示词 
+- 视频节点 新增 apimart ：Grok Imagine 1.0 ， Omni-Flash-Ext 
+- grsai 新增 gpt-5.4  gpt-5.5 gemini-3.5-flash 
+- 新增 “商业级数字人对口型” vip授权 
+- 视频节点 新增“apimart” ：HappyHorse 1.0， Wan2.7 ，VEO3 ，Hailuo-02 ，Hailuo-2.3 ， Wan2.6 ，Kling v3 ，Kling v3 Omni，Kling Video O1 ，Vidu Q3
+- 视频节点 新增“runninghub模型” ：HappyHorse 1.0， Wan2.7 ，VEO3 ，Hailuo-02 ，Hailuo-2.3 ， Wan2.6 ，Kling v3 ，Kling v3 Omni，Kling Video O1 ，Vidu Q3
+- 视频节点 新增 ”火山方舟“：seedance2.0 ,seedance2.0-fast
+- 图像生成节点 新增 "runninghub模型" “Midjourney V6 v7 v8.1”
+- 图像生成节点 新增 ”火山方舟“： seedream5.0,seedream4.5,seedream4.0
+- 文本生成节点 新增 “火山方舟“： doubao 2.0lite ,mini，pro
+- 生成N张图片时点开“展开”查看 可以直接拖拽图片到画布 快速创建
+- 图像节点 “裁剪”功能 新增ctrl+鼠标拖拽 可以自定义区域 更加方便裁剪
+
+🐛 修复与优化：
+- 改进了双击创建的菜单
+- 画布速度优化
+- 修复”裁剪视频“空格键有时候播放不动的情况
+
+AI-CanvasPro！ windows 应用版本已发布 欢迎体验！ mac版本后续再上 （主要是没得测试）
+BUG问题或要新增功能反馈文档：https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink
+
+---
+
 🎉 V0.4.4 版本更新啦！
 
 0.3.2之前的版本请执行以下操作再安装 
@@ -22,9 +70,6 @@
 🐛 修复与优化：
 - 画布速度优化
 - 修复声音节点“下载”无效的问题
-
-
-
 
 AI-CanvasPro！ windows 应用版本已发布 欢迎体验！ mac版本后续再上 （主要是没得测试）
 BUG问题或要新增功能反馈文档：https://i1etb6xynr.feishu.cn/wiki/N2C3wD6SgisOpek11mfcfJCinkr?from=from_copylink

@@ -245,7 +245,7 @@ class DreaminaRouteService:
                 return error
             return self._start_login_response(
                 force=self._parse_payload_flag(data.get("force")),
-                mode="web",
+                mode="oauth",
             )
 
         if path == "/api/v2/dreamina/login/import":
