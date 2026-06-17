@@ -21,6 +21,9 @@ services:
       - AIC_BIND_HOST=0.0.0.0
       - AIC_LAN_MODE=1
       - AICANVAS_PORT=8777
+      # ---- 日志配置 ----
+      # off: 静默 / basic: 标准HTTP日志 / verbose: 详细日志(含IP/UA)
+      - AIC_LOG_LEVEL=${AIC_LOG_LEVEL:-basic}
       # ---- 安全配置 ----
       # 配置允许访问的域名 Origin（多个用逗号分隔）
       # 部署到云端时请替换为你的实际域名
@@ -35,12 +38,14 @@ services:
       # - HTTPS_PROXY=${HTTPS_PROXY:-}
 
     volumes:
-      # 用户数据持久化（画布项目、设置、API Key 等）
+      # 用户数据（画布项目、设置、API Key 配置）
       - ./user:/app/user
-      # 上传文件持久化
-      - ./data/uploads:/app/data/uploads
-      # 输出文件持久化
-      - ./data/output:/app/data/output
+      # 数据目录（上传文件、资源缩略图、工作流）
+      - ./data:/app/data
+      # 输出目录（生成的图片、视频等输出文件）
+      - ./output:/app/output
+      # 系统状态（设备标识，确保 installId / deviceId 在容器重建后不变）
+      - ./system-state:/root/.local/state/AI-CanvasPro
 
     # 资源限制（可选）
     # deploy:

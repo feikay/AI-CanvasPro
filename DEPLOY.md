@@ -44,6 +44,10 @@ docker compose up -d --build
 # ====== 端口配置 ======
 AICANVAS_PORT=8777
 
+# ====== 日志配置 ======
+# off: 完全静默 / basic: 标准HTTP日志 / verbose: 详细日志(含IP/UA)
+AIC_LOG_LEVEL=basic
+
 # ====== 安全配置 ======
 # 部署到云端时，替换为你的实际域名，多个用逗号分隔
 AIC_ALLOWED_ORIGINS=https://your-domain.com,https://www.your-domain.com
@@ -65,8 +69,11 @@ AIC_ALLOWED_ORIGINS=https://your-domain.com,https://www.your-domain.com
 | 容器内路径 | 宿主机路径 | 说明 |
 |-----------|-----------|------|
 | `/app/user/` | `./user/` | 画布项目、快捷键、应用设置、API Key 配置 |
-| `/app/data/uploads/` | `./data/uploads/` | 用户上传的文件 |
-| `/app/data/output/` | `./data/output/` | 生成的输出文件 |
+| `/app/data/` | `./data/` | 上传文件、资源缩略图、工作流定义 |
+| `/app/output/` | `./output/` | 生成的图片、视频等输出文件 |
+| `/root/.local/state/AI-CanvasPro/` | `./system-state/` | 设备标识（installId/deviceId） |
+
+> **注意**：`/app/data/` 挂载覆盖了 `uploads/`、`assets/`、`workflows/` 等子目录，无需单独挂载每个子目录。如果重启容器后发现 `installId` 变化导致 CDKEY 失效，请检查 `system-state` 卷是否正确挂载。
 
 ---
 

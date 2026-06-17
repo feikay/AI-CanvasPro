@@ -143,6 +143,7 @@ cp .env.example .env
 | `AICANVAS_PORT` | `8777` | 否 | 服务监听端口 |
 | `AIC_BIND_HOST` | `0.0.0.0` | 否 | Docker 内已自动设为 `0.0.0.0` |
 | `AIC_LAN_MODE` | `1` | 否 | Docker 内已自动启用 |
+| `AIC_LOG_LEVEL` | `basic` | 否 | 日志级别：`off`(静默) / `basic`(标准) / `verbose`(详细) |
 | `AIC_ALLOWED_ORIGINS` | 空 | 云端必填 | 允许的 CORS Origin，多个逗号分隔 |
 | `AIC_LOCAL_TOKEN` | 空 | 否 | 本地访问令牌（设置后请求需携带） |
 | `AIC_SUBSCRIPTION_API_BASE` | `https://api.ashuoai.com` | 否 | 订阅授权服务器地址 |
@@ -156,6 +157,7 @@ cp .env.example .env
 ```bash
 # .env
 AICANVAS_PORT=8777
+AIC_LOG_LEVEL=verbose
 AIC_ALLOWED_ORIGINS=http://localhost:8777
 ```
 
@@ -164,6 +166,7 @@ AIC_ALLOWED_ORIGINS=http://localhost:8777
 ```bash
 # .env
 AICANVAS_PORT=8777
+AIC_LOG_LEVEL=basic
 AIC_ALLOWED_ORIGINS=https://canvas.your-domain.com,https://www.your-domain.com
 HTTP_PROXY=http://proxy-server:7890
 HTTPS_PROXY=http://proxy-server:7890
@@ -174,6 +177,46 @@ HTTPS_PROXY=http://proxy-server:7890
 - `.env` 文件中的变量由 `docker compose` 自动读取
 - 也可以临时覆盖：`AICANVAS_PORT=8080 docker compose up -d`
 - 修改 `.env` 后需重启容器：`docker compose down && docker compose up -d`
+
+### 4.4 Linux 部署目录自定义
+
+默认所有数据存储在项目目录下。如需将数据放到独立磁盘或 NFS 挂载，可通过以下环境变量覆盖：
+
+```bash
+# 示例：将所有数据放到 /mnt/data/ 下
+AIC_USER_DIR=/mnt/data/canvaspro/user
+AIC_OUTPUT_DIR=/mnt/data/canvaspro/output
+AIC_DATA_DIR=/mnt/data/canvaspro/data
+```
+
+配置后同步修改 `docker-compose.yml` 的 volumes 挂载路径：
+
+```yaml
+volumes:
+  - /mnt/data/canvaspro/user:/mnt/data/canvaspro/user
+  - /mnt/data/canvaspro/data:/mnt/data/canvaspro/data
+  - /mnt/data/canvaspro/output:/mnt/data/canvaspro/output
+```
+
+目录层级关系（不设环境变量时的默认值）：
+
+```
+/app/                          # 容器内项目根目录
+├── user/                      # AIC_USER_DIR，用户数据根
+│   ├── Canvas Project/        # AIC_CANVAS_DIR，画布项目
+│   ├── config.json            # API Key 配置
+│   └── settings.json          # 应用设置
+├── data/                      # AIC_DATA_DIR，数据根
+│   ├── uploads/               # AIC_UPLOADS_DIR，上传文件
+│   ├── assets/                # 资源 + 缩略图
+│   │   ├── thumbs/
+│   │   └── workflows/thumbs/
+│   └── workflows/             # 工作流定义
+├── output/                    # AIC_OUTPUT_DIR，生成文件
+└── server.py
+```
+
+> **注意**：`UPLOADS_DIR`、`ASSETS_DIR`、`WORKFLOWS_DIR` 默认是 `DATA_DIR` 的子目录。如果只覆盖 `AIC_DATA_DIR`，这些子目录会自动跟随；如果单独覆盖 `AIC_UPLOADS_DIR` 等，子目录将独立。
 
 ---
 
@@ -411,8 +454,9 @@ services:
       - AIC_ALLOWED_ORIGINS=${AIC_ALLOWED_ORIGINS}
     volumes:
       - ./user:/app/user
-      - ./data/uploads:/app/data/uploads
-      - ./data/output:/app/data/output
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./system-state:/root/.local/state/AI-CanvasPro
     # 资源限制
     deploy:
       resources:
@@ -447,7 +491,7 @@ networks:
 
 ```bash
 # 创建目录结构
-mkdir -p nginx/ssl user data/uploads data/output
+mkdir -p nginx/ssl user data output system-state
 
 # 放置 SSL 证书
 cp /path/to/fullchain.pem nginx/ssl/
@@ -626,6 +670,33 @@ deploy:
   resources:
     limits:
       memory: "4G"
+```
+
+### 9.7 命令行没有任何日志输出
+
+默认情况下 `AIC_LOG_LEVEL=basic`，如果完全看不到 HTTP 请求日志：
+
+```bash
+# 1. 检查当前日志级别
+docker compose exec canvaspro sh -c 'echo $AIC_LOG_LEVEL'
+
+# 2. 切换为详细日志级别
+# 修改 .env 文件：
+AIC_LOG_LEVEL=verbose
+# 重启：
+docker compose down && docker compose up -d
+
+# 3. 查看实时日志
+docker compose logs -f
+
+# 4. 日志效果说明：
+#    off:     完全静默，无任何 HTTP 请求输出（适合生产环境）
+#    basic:   输出格式 "127.0.0.1 - - [17/Jun/2026 20:00:00] "GET / HTTP/1.1" 200 -"
+#    verbose: 输出格式 "[2026-06-17 20:00:00] 192.168.1.1 "GET /api/v2/xxx HTTP/1.1" 200 - | UA: Mozilla/5.0..."
+
+# 5. 非 Docker 方式启动时添加命令行参数：
+python server.py --log-level=basic
+python server.py --log-level=verbose
 ```
 
 ---

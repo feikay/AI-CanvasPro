@@ -230,6 +230,9 @@ ALLOWED_ORIGINS = tuple(
     origin for origin in (_normalize_origin(item) for item in _split_env_list("AIC_ALLOWED_ORIGINS")) if origin
 )
 LOCAL_ACCESS_TOKEN = str(os.environ.get("AIC_LOCAL_TOKEN", "") or "").strip()
+# 日志级别: "off"(默认,静默), "basic"(标准HTTP日志), "verbose"(详细请求日志含body大小)
+_LOG_LEVEL_RAW = str(os.environ.get("AIC_LOG_LEVEL", "off") or "off").strip().lower()
+LOG_LEVEL = _LOG_LEVEL_RAW if _LOG_LEVEL_RAW in ("off", "basic", "verbose") else "off"
 DIRECTORY = os.path.abspath(os.path.dirname(__file__))   # v2/ 绝对路径
 # --- 版本号 ---
 # 从 index.html 读取版本号
@@ -2464,9 +2467,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return os.path.abspath(os.path.join(root_dir, rel))
         return super().translate_path(path)
 
-    # 屏蔽日志噪音（按霢注释掉）
+    # 日志级别由外部设置: "off"(默认), "basic"(标准HTTP日志), "verbose"(详细日志)
+    log_level = "off"
+
     def log_message(self, fmt, *args):
-        pass
+        level = getattr(Handler, "log_level", "off")
+        if level == "off":
+            return
+        if level == "basic":
+            super().log_message(fmt, *args)
+            return
+        # verbose: 带时间戳、客户端IP、User-Agent的详细日志
+        client_ip = self.client_address[0] if self.client_address else "-"
+        user_agent = self.headers.get("User-Agent", "-")
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        msg = fmt % args
+        print(f"[{ts}] {client_ip} {msg} | UA: {user_agent[:80]}", flush=True)
 
     def send_head(self):
         path = self.translate_path(self.path)
@@ -3528,6 +3544,7 @@ def _parse_server_args(argv):
     port = PORT
     bind_host = BIND_HOST
     lan_mode = bool(LAN_MODE)
+    log_level = LOG_LEVEL
     positional = []
     for arg in argv:
         raw = str(arg or "").strip()
@@ -3545,6 +3562,11 @@ def _parse_server_args(argv):
             except Exception:
                 port = PORT
             continue
+        if raw.startswith("--log-level="):
+            val = raw.split("=", 1)[1].strip().lower()
+            if val in ("off", "basic", "verbose"):
+                log_level = val
+            continue
         positional.append(raw)
 
     if positional:
@@ -3555,7 +3577,7 @@ def _parse_server_args(argv):
     if len(positional) > 1:
         bind_host = positional[1].strip() or bind_host
 
-    return port, bind_host, lan_mode
+    return port, bind_host, lan_mode, log_level
 
 
 def _resolve_bind_host(bind_host, lan_mode):
@@ -3608,8 +3630,10 @@ if __name__ == "__main__":
     # 后台启动自动更新检查
     _t = threading.Thread(target=UPDATE_SERVICE.update_check_loop, daemon=True, name='AutoUpdateChecker')
     _t.start()
-    port, requested_bind_host, lan_mode = _parse_server_args(sys.argv[1:])
+    port, requested_bind_host, lan_mode, log_level = _parse_server_args(sys.argv[1:])
     bind_host, bind_host_was_restricted = _resolve_bind_host(requested_bind_host, lan_mode)
+    # 将日志级别注入 Handler 类
+    Handler.log_level = log_level
     with QuietThreadingTCPServer((bind_host, port), Handler) as httpd:
         print("=" * 56)
         if SUBSCRIPTION_API_BASE_OVERRIDDEN:
@@ -3620,6 +3644,7 @@ if __name__ == "__main__":
             print("[security] 0.0.0.0 需要显式局域网模式，已回退到 127.0.0.1")
         if lan_mode:
             print("[security] 局域网模式已开启，请通过 AIC_ALLOWED_ORIGINS 配置可信 Origin")
+        print(f"[log] 日志级别: {log_level}")
         print("AI Canvas 服务已启动")
         for url in _display_urls(bind_host, port):
             print(url)

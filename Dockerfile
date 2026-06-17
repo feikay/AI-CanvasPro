@@ -31,8 +31,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 复制项目文件（排除 .dockerignore 中的内容）
 COPY . .
 
-# 创建运行时数据目录
-RUN mkdir -p /app/user /app/data/uploads /app/data/output
+# 创建运行时数据目录（server.py 启动时也会自动创建，这里用于 volume mount 占位）
+RUN mkdir -p /app/user /app/data /app/output \
+    && mkdir -p /root/.local/state/AI-CanvasPro
 
 # 暴露服务端口
 EXPOSE 8777
@@ -41,8 +42,9 @@ EXPOSE 8777
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8777/')" || exit 1
 
-# 启动服务：绑定 0.0.0.0，开启局域网模式
+# 启动服务：绑定 0.0.0.0，开启局域网模式，默认 basic 日志级别
 ENV AIC_BIND_HOST=0.0.0.0 \
-    AIC_LAN_MODE=1
+    AIC_LAN_MODE=1 \
+    AIC_LOG_LEVEL=basic
 
 CMD ["python", "server.py"]
