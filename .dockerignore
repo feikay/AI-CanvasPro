@@ -1,0 +1,83 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Node / Electron
+node_modules/
+electron/
+electron-build/
+.electron/
+.electron-runtime/
+electron-builder.*
+package-lock.json
+
+# IDE / Editor
+.vscode/
+.idea/
+.trae/
+.codex/
+.agent/
+.agentsrules/
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Build artifacts
+dist/
+dist-obfuscated/
+release/
+*.zip
+*.tar.gz
+
+# Test
+playwright-report/
+test-results/
+.playwright/
+test-artifacts/
+e2e/
+
+# GitHub
+.github/
+
+# Temp files
+.tmp/
+.tmp
+.tmp_*
+*.tmp.zip
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+*.bat
+
+# Docs (not needed at runtime)
+docs/
+*.md
+!使用说明.md
+
+# Dev files
+dev-helper.js
+.ai_workflow/
+compress-project.ps1
+project-compressed.zip
+
+# Models (too large, mount via volume if needed)
+models/
+
+# Logs
+logs/
+*.log
+
+# Dreamina QR
+dreamina-login-qr.png

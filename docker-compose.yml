@@ -1,0 +1,57 @@
+version: "3.8"
+
+# ===========================================
+# AI CanvasPro - Docker Compose 部署配置
+# ===========================================
+
+services:
+  canvaspro:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-canvaspro:latest
+    container_name: ai-canvaspro
+    restart: unless-stopped
+
+    ports:
+      - "${AICANVAS_PORT:-8777}:8777"
+
+    environment:
+      # ---- 服务绑定配置 ----
+      - AIC_BIND_HOST=0.0.0.0
+      - AIC_LAN_MODE=1
+      - AICANVAS_PORT=8777
+      # ---- 安全配置 ----
+      # 配置允许访问的域名 Origin（多个用逗号分隔）
+      # 部署到云端时请替换为你的实际域名
+      - AIC_ALLOWED_ORIGINS=${AIC_ALLOWED_ORIGINS:-}
+      # 可选的本地访问令牌（设置后需在请求中携带）
+      # - AIC_LOCAL_TOKEN=${AIC_LOCAL_TOKEN:-}
+      # ---- 订阅授权配置 ----
+      # 如需自定义订阅服务器地址（一般不需要）
+      # - AIC_SUBSCRIPTION_API_BASE=${AIC_SUBSCRIPTION_API_BASE:-}
+      # ---- 代理配置（可选）----
+      # - HTTP_PROXY=${HTTP_PROXY:-}
+      # - HTTPS_PROXY=${HTTPS_PROXY:-}
+
+    volumes:
+      # 用户数据持久化（画布项目、设置、API Key 等）
+      - ./user:/app/user
+      # 上传文件持久化
+      - ./data/uploads:/app/data/uploads
+      # 输出文件持久化
+      - ./data/output:/app/data/output
+
+    # 资源限制（可选）
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "2"
+    #       memory: "2G"
+    #     reservations:
+    #       cpus: "1"
+    #       memory: "1G"
+
+networks:
+  default:
+    name: ai-canvaspro-network
