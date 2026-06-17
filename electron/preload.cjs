@@ -165,7 +165,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   diagnostics: {
     logEvent: (payload) => ipcRenderer.invoke("diagnostics:logEvent", payload),
-    createPackage: () => ipcRenderer.invoke("diagnostics:createPackage"),
+    createPackage: (payload) => ipcRenderer.invoke("diagnostics:createPackage", payload),
     openLogsFolder: () => ipcRenderer.invoke("diagnostics:openLogsFolder"),
   },
   notification: {
