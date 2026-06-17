@@ -39,13 +39,13 @@ services:
 
     volumes:
       # 用户数据（画布项目、设置、API Key 配置）
-      - ./user:/app/user
+      - /root/runtime/ai-canvas/user:/app/user
       # 数据目录（上传文件、资源缩略图、工作流）
-      - ./data:/app/data
+      - /root/runtime/ai-canvas/data:/app/data
       # 输出目录（生成的图片、视频等输出文件）
-      - ./output:/app/output
+      - /root/runtime/ai-canvas/output:/app/output
       # 系统状态（设备标识，确保 installId / deviceId 在容器重建后不变）
-      - ./system-state:/root/.local/state/AI-CanvasPro
+      - /root/runtime/ai-canvas/system-state:/root/.local/state/AI-CanvasPro
 
     # 资源限制（可选）
     # deploy:
