@@ -75,5 +75,9 @@ electron-build/
 **/electron-build/
 
 # Ignore electron runtime files
-.electron/    
+.electron/
 **/.electron/
+
+# Ignore local deployment config (contains local paths, credentials)
+docker-compose.yml
+.env
