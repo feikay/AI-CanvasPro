@@ -64,7 +64,6 @@ Thumbs.db
 # Docs (not needed at runtime)
 docs/
 *.md
-!使用说明.md
 
 # Dev files
 dev-helper.js

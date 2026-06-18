@@ -14,7 +14,9 @@ services:
     restart: unless-stopped
 
     ports:
-      - "${AICANVAS_PORT:-8777}:8777"
+      # 外部访问端口:容器内端口
+      # 外部 http://ai-canvas.feikay.cn:18777 -> NAT -> 192.168.123.252:8777 -> 容器内 8777
+      - "8777:8777"
 
     environment:
       # ---- 服务绑定配置 ----
@@ -25,9 +27,9 @@ services:
       # off: 静默 / basic: 标准HTTP日志 / verbose: 详细日志(含IP/UA)
       - AIC_LOG_LEVEL=${AIC_LOG_LEVEL:-basic}
       # ---- 安全配置 ----
-      # 配置允许访问的域名 Origin（多个用逗号分隔）
-      # 部署到云端时请替换为你的实际域名
-      - AIC_ALLOWED_ORIGINS=${AIC_ALLOWED_ORIGINS:-}
+      # 必须是浏览器实际访问的完整 URL（协议+域名+端口）
+      # 外网通过 http://ai-canvas.feikay.cn:18777 访问
+      - AIC_ALLOWED_ORIGINS=http://ai-canvas.feikay.cn:18777
       # 可选的本地访问令牌（设置后需在请求中携带）
       # - AIC_LOCAL_TOKEN=${AIC_LOCAL_TOKEN:-}
       # ---- 订阅授权配置 ----
@@ -39,13 +41,13 @@ services:
 
     volumes:
       # 用户数据（画布项目、设置、API Key 配置）
-      - /root/runtime/ai-canvas/user:/app/user
+      - /volume2/docker/ai-canvas/user:/app/user
       # 数据目录（上传文件、资源缩略图、工作流）
-      - /root/runtime/ai-canvas/data:/app/data
+      - /volume2/docker/ai-canvas/data:/app/data
       # 输出目录（生成的图片、视频等输出文件）
-      - /root/runtime/ai-canvas/output:/app/output
+      - /volume2/docker/ai-canvas/output:/app/output
       # 系统状态（设备标识，确保 installId / deviceId 在容器重建后不变）
-      - /root/runtime/ai-canvas/system-state:/root/.local/state/AI-CanvasPro
+      - /volume2/docker/ai-canvas/system-state:/root/.local/state/AI-CanvasPro
 
     # 资源限制（可选）
     # deploy:
