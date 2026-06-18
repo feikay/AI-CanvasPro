@@ -1521,6 +1521,9 @@ def _request_passes_local_security(handler, path):
     origin = handler.headers.get("Origin", "")
     if origin:
         return _is_allowed_origin(handler, origin) or _request_has_valid_local_token(handler)
+    # 浏览器对同源 GET 请求不发送 Origin 头，局域网模式下放宽限制
+    if LAN_MODE:
+        return True
     return _client_is_loopback(handler) or _request_has_valid_local_token(handler)
 
 

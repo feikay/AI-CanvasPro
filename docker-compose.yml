@@ -29,7 +29,7 @@ services:
       # ---- 安全配置 ----
       # 必须是浏览器实际访问的完整 URL（协议+域名+端口）
       # 外网通过 http://ai-canvas.feikay.cn:18777 访问
-      - AIC_ALLOWED_ORIGINS=http://ai-canvas.feikay.cn:18777
+      - AIC_ALLOWED_ORIGINS=${AIC_ALLOWED_ORIGINS:-http://localhost:8777}
       # 可选的本地访问令牌（设置后需在请求中携带）
       # - AIC_LOCAL_TOKEN=${AIC_LOCAL_TOKEN:-}
       # ---- 订阅授权配置 ----
