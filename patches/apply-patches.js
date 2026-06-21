@@ -43,7 +43,7 @@ function patchIndexHtml() {
   const html = read('index.html');
 
   // 幂等检查：如果 COOL 卡片已存在，跳过
-  if (html.includes('data-provider="cool"')) {
+  if (html.includes('id="providerKey-cool"')) {
     console.log('   ⏭️ COOL 卡片已存在，跳过');
     return true;
   }
