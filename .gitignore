@@ -81,6 +81,7 @@ electron-build/
 # Ignore local deployment config (contains local paths, credentials)
 docker-compose.yml
 .env
+nginx.conf
 
 # Ignore debug files
 _debug_*.txt
