@@ -1782,6 +1782,7 @@ REMOTE_PROXY_ROUTE_SERVICE = RemoteProxyRouteService(
     read_body=_read_body,
     subscription_gate_service_getter=lambda: SUBSCRIPTION_GATE_SERVICE,
     video_vip_workflow_ids=VIDEO_VIP_WORKFLOW_IDS,
+    output_dir_getter=lambda: OUTPUT_DIR,
 )
 
 
@@ -3147,6 +3148,30 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             local_authorization_payload = dict(data) if isinstance(data, dict) else {}
             for key in SUBSCRIPTION_AUTHORIZATION_ID_KEYS:
                 data.pop(key, None)
+            # COOL API: convert image_urls / video_urls to files format and inject @图片/@视频 references
+            if "mjapi.cc.cd" in api_url:
+                files = []
+                refs = []
+                image_urls = data.pop("image_urls", None) if isinstance(data, dict) else None
+                if image_urls and isinstance(image_urls, list):
+                    for idx, url in enumerate(image_urls, 1):
+                        url_str = str(url or "").strip()
+                        if url_str:
+                            files.append({"url": url_str, "type": "image"})
+                            refs.append(f"@图片{idx}")
+                video_urls = data.pop("video_urls", None) if isinstance(data, dict) else None
+                if video_urls and isinstance(video_urls, list):
+                    for idx, url in enumerate(video_urls, 1):
+                        url_str = str(url or "").strip()
+                        if url_str:
+                            files.append({"url": url_str, "type": "video"})
+                            refs.append(f"@视频{idx}")
+                if files:
+                    data["files"] = files
+                    prompt = str(data.get("prompt", "") or "").strip()
+                    ref_str = " ".join(refs)
+                    if ref_str and ref_str not in prompt:
+                        data["prompt"] = f"{prompt} {ref_str}".strip() if prompt else ref_str
             def _extract_task_id_from_text(raw_text):
                 text = str(raw_text or "")
                 if not text:

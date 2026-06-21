@@ -1,0 +1,423 @@
+{
+  "_说明": "COOL API 网关 (MJ API) 厂商配置。运行 apply-patches.js 输出完整手工改动指引（含可复制代码）。",
+  "_版本": "1.0.0",
+  "_上游": "https://github.com/ashuoAI/AI-CanvasPro",
+
+  "provider": {
+    "id": "cool",
+    "label": "COOL (MJ API)",
+    "defaultUrl": "https://api.mjapi.cc.cd",
+    "logoPath": null
+  },
+
+  "patchTargets": {
+    "_说明": "每个 target 含 search(定位标记)、insert(插入代码)、note(说明)",
+
+    "1_src_modules_providers.js": {
+      "file": "src/modules/providers.js",
+      "note": "在 PROVIDERS_META 对象的最后一个条目后添加 cool",
+      "changes": [
+        {
+          "what": "在 PROVIDERS_META 末尾加 cool 条目",
+          "search": ",'aicanvas':{'id':'aicanvas','label':",
+          "insertBefore": false,
+          "code": ",'cool':{'id':'cool','label':'COOL (MJ API)','defaultUrl':'https://api.mjapi.cc.cd','logoPath':null},'aicanvas':{'id':'aicanvas','label':"
+        }
+      ]
+    },
+
+    "2_api_configApi.js": {
+      "file": "api/configApi.js",
+      "note": "在 DEFAULT_SECURE_PROVIDER_IDS 数组中加 'cool'",
+      "changes": [
+        {
+          "what": "DEFAULT_SECURE_PROVIDER_IDS 数组加 'cool'",
+          "search": "'volcengine','aicanvas'",
+          "insertBefore": false,
+          "code": "'cool','volcengine','aicanvas'"
+        }
+      ]
+    },
+
+    "3_api_providerConnectionTestApi.js": {
+      "file": "api/providerConnectionTestApi.js",
+      "note": "三处改动: DEFAULT_TEST_IDS加cool / 新增coolProviderProbe函数 / 调度函数加分支",
+      "changes": [
+        {
+          "what": "① DEFAULT_PROVIDER_TEST_IDS 数组末尾加 'cool'",
+          "search": "a61_0xa60831(0x1a2)]),COM",
+          "insertBefore": false,
+          "code": "a61_0xa60831(0x1a2),'cool']),COM"
+        },
+        {
+          "what": "② 新增 coolProviderProbe 函数 — 搜索 async function volcengineProviderProbe，在它前面插入",
+          "search": "async function volcengineProviderProbe",
+          "insertBefore": true,
+          "code": "async function coolProviderProbe(_0x4a2b3c){const _0x2t=a61_0xa60831,_0x3d=providerConfigWithDefaults('cool',_0x4a2b3c),_0xst=[];if(!_0x3d['apiKey'])return _0xst['push'](makeStep('config',![],'API Key 未填写','',{'category':'missing_key'})),finishProviderResult('cool',_0xst);if(!_0x3d['apiUrl'])return _0xst['push'](makeStep('config',![],'接口地址未配置','',{'category':'missing_url'})),finishProviderResult('cool',_0xst);_0xst['push'](makeStep('config',!![],'接口地址和 API Key 已填写'));\\nconst _0xmu=stripKnownOpenAiTail(_0x3d['apiUrl'])+'/v1/cool/models';if(_0xmu){const _0xpr=await request('/api/v2/proxy/task?apiUrl='+encodeURIComponent(_0xmu),{'method':'GET','headers':{'Authorization':'Bearer '+_0x3d['apiKey']}},TEST_TIMEOUT_MS);if(isSuccessfulProbe(_0xpr))_0xst['push'](makeStep('auth',!![],'API Key 可用，模型列表可访问','cool-models'));else{const _0xcf=classifyProbeFailure(_0xpr);return _0xst['push'](makeStep('auth',![],humanizeCategory(_0xcf,'cool'),summarizeFailure(_0xpr),{'category':_0xcf})),finishProviderResult('cool',_0xst);}}return finishProviderResult('cool',_0xst);}"
+        },
+        {
+          "what": "③ testProviderConnection 函数加 cool 分支 — 在 runningHub 判断前插入",
+          "search": "if(_0x33d60a===_0x5e02d6(0x24f))return runningHubProviderProbe",
+          "insertBefore": true,
+          "code": "if(_0x33d60a==='cool')return coolProviderProbe(_0xd50c56);"
+        }
+      ]
+    },
+
+    "4_src_manifests_modelRegistry.js": {
+      "file": "src/manifests/modelRegistry.js",
+      "note": "进口导入 + PROVIDER_PREFIXES + 注册调用，共4处",
+      "changes": [
+        {
+          "what": "① 顶部 import 区添加 cool 清单导入 (搜索 import{animeRealExecutionManifest)",
+          "search": "import{animeRealExecutionManifest",
+          "insertBefore": true,
+          "code": "import{coolImageModelApiExecutionManifests,coolImageModelApiModelManifests}from'./image/modelApi/coolImageManifests.js';import{coolVideoModelApiExecutionManifests,coolVideoModelApiModelManifests}from'./video/modelApi/coolVideoManifests.js';"
+        },
+        {
+          "what": "② PROVIDER_PREFIXES 加 cool 前缀映射 (搜索 'volcengine':'volcengine')",
+          "search": "'volcengine':'volcengine'",
+          "insertBefore": false,
+          "code": "'cool':'cool','volcengine':'volcengine'"
+        },
+        {
+          "what": "③ 文件末尾注册 (在最后一个 registerModelManifest 调用后加)",
+          "search": "vendorTextModelApiModelManifests[a412_0x4525a6(0x27e)](registerModelManifest);",
+          "insertBefore": false,
+          "code": "vendorTextModelApiModelManifests[a412_0x4525a6(0x27e)](registerModelManifest);coolImageModelApiExecutionManifests[a412_0x4525a6(0x27e)](registerExecutionManifest);coolImageModelApiModelManifests[a412_0x4525a6(0x27e)](registerModelManifest);coolVideoModelApiExecutionManifests[a412_0x4525a6(0x27e)](registerExecutionManifest);coolVideoModelApiModelManifests[a412_0x4525a6(0x27e)](registerModelManifest);"
+        }
+      ]
+    },
+
+    "5_src_manifests_image_modelApi_index.js": {
+      "file": "src/manifests/image/modelApi/index.js",
+      "note": "添加 cool 清单的 re-export",
+      "changes": [
+        {
+          "what": "在最后一个 export 语句后添加 (搜索 ppioImageModelApiManifests)",
+          "search": "ppioImageModelApiManifests.js';",
+          "insertBefore": false,
+          "code": "ppioImageModelApiManifests.js';export{coolImageModelApiModelManifests,coolImageModelApiExecutionManifests}from'./coolImageManifests.js';"
+        }
+      ]
+    },
+
+    "6_src_manifests_video_modelApi_vendorVideoModelApiManifests.js": {
+      "file": "src/manifests/video/modelApi/vendorVideoModelApiManifests.js",
+      "note": "🚫 无需修改！cool 视频清单已在 modelRegistry.js 中独立 import 并注册，此文件不用动。",
+      "changes": []
+    },
+
+    "7_api_adapters_ModelApiManifestNormalizer.js": {
+      "file": "api/adapters/ModelApiManifestNormalizer.js",
+      "note": "🚫 无需修改！已改为后端自动转换方案：后端 _handle_cool_generate 自动将 image_urls 转为 COOL files 格式，前端清单用标准 bodyMapping，无需 bodyResolver。",
+      "changes": []
+    },
+
+    "8_src_modules_app_appTopbarAndConfig.js": {
+      "file": "src/modules/app/appTopbarAndConfig.js",
+      "note": "前端 API Key 收集逻辑。此文件是混淆文件，包含一个提供商 ID 数组用于遍历收集各厂商的 providerKey-xxx 输入框值。需在此数组末尾追加 'cool'，否则用户在 COOL 卡片输入的密钥永远不会被收集，测试连接会报 'API Key 未填写'。",
+      "changes": [
+        {
+          "what": "在提供商 ID 数组末尾追加 'cool'（数组形如 [_0x43ed5c(0x22d),...,_0x43ed5c(0x217)]，位于 createAppTopbarAndConfig 函数内）",
+          "search": "_0x43ed5c(0x22d),_0x43ed5c(0x28a),_0x43ed5c(0x26a),_0x43ed5c(0x193),_0x43ed5c(0x1e0),_0x43ed5c(0x264),_0x43ed5c(0x217)]",
+          "insertBefore": false,
+          "code": "_0x43ed5c(0x22d),_0x43ed5c(0x28a),_0x43ed5c(0x26a),_0x43ed5c(0x193),_0x43ed5c(0x1e0),_0x43ed5c(0x264),_0x43ed5c(0x217),'cool']"
+        }
+      ]
+    },
+
+    "9_src_modules_imageFunctionModelMenu.js": {
+      "file": "src/modules/imageFunctionModelMenu.js",
+      "note": "图片生成功能节点的厂商菜单。混淆文件。需在 IMAGE_FUNCTION_PROVIDER_META 对象中加 cool 条目，在 IMAGE_FUNCTION_MENU_PROVIDER_BY_GROUP 中加 'cool' 和 'cool-vip' 到 'cool' 的映射。否则画布中图片功能节点的厂商选择看不到 COOL。",
+      "changes": [
+        {
+          "what": "① IMAGE_FUNCTION_PROVIDER_META 末尾(runninghub 条目之后)加 cool 条目",
+          "search": "'runninghub':Object[a503_0x5144f4(0x186)]({get 'name'(){const _0x2cc754=a503_0x5144f4;return t(_0x2cc754(0x172));},'icon':'images/RH.png',get 'description'(){const _0x196651=a503_0x5144f4;return t(_0x196651(0x19a));},'modelIconStrategy':a503_0x5144f4(0x191)})})",
+          "insertBefore": false,
+          "code": "'runninghub':Object[a503_0x5144f4(0x186)]({get 'name'(){const _0x2cc754=a503_0x5144f4;return t(_0x2cc754(0x172));},'icon':'images/RH.png',get 'description'(){const _0x196651=a503_0x5144f4;return t(_0x196651(0x19a));},'modelIconStrategy':a503_0x5144f4(0x191)}),'cool':Object[a503_0x5144f4(0x186)]({'name':'COOL','icon':'CL','description':'COOL (MJ API) 网关','isTextIcon':!![]})})"
+        },
+        {
+          "what": "② IMAGE_FUNCTION_MENU_PROVIDER_BY_GROUP 末尾加 cool 和 cool-vip 映射",
+          "search": "'runninghubModel':a503_0x5144f4(0x13b)})",
+          "insertBefore": false,
+          "code": "'runninghubModel':a503_0x5144f4(0x13b),'cool':'cool','cool-vip':'cool'})"
+        }
+      ]
+    },
+
+    "10_src_components_aigenImage_uiModuleModelHelpers.js": {
+      "file": "src/components/aigenImage/uiModuleModelHelpers.js",
+      "note": "AI 生图节点的厂商菜单。混淆文件。需新增 buildCoolImageMenuGroupHTML 函数、在 buildImageModelMenuHTML 中调用它、在 setImageModelTriggerIcon 和 renderImageModelTriggerIconHTML 中加 cool 图标分支。",
+      "changes": [
+        {
+          "what": "① 新增 buildCoolImageMenuGroupHTML 函数（在 buildRunningHubWorkflowImageMenuGroupHTML 之后插入）",
+          "search": "export function buildRunningHubWorkflowImageMenuGroupHTML(_0x7caa57){",
+          "insertBefore": false,
+          "code": "export function buildCoolImageMenuGroupHTML(_0x3c0f51){const _0x4e7c8e=a158_0x25655a;const _0x25a6df=getImageModelMenuManifests('cool')['map'](_0x3a5c12=>renderImageManifestMenuItemHTML(_0x3a5c12,_0x3c0f51))['join']('')+getImageModelMenuManifests('cool-vip')['map'](_0x3a5c12=>renderImageManifestMenuItemHTML(_0x3a5c12,_0x3c0f51))['join']('');return renderImageMenuGroupHTML({'headerClass':'cool-group-header','toggleAttr':'data-cool-toggle','submenuClass':'cool-submenu','iconHtml':'<div class=\"node-menu-icon node-menu-icon-badge\">CL</div>','title':'COOL','subtitle':'COOL (MJ API) 图像生成','itemsHtml':_0x25a6df});}\nexport function buildRunningHubWorkflowImageMenuGroupHTML(_0x7caa57){"
+        },
+        {
+          "what": "② 在 buildImageModelMenuHTML 中 buildRunningHubWorkflowImageMenuGroupHTML 调用后加 buildCoolImageMenuGroupHTML",
+          "search": "buildRunningHubWorkflowImageMenuGroupHTML(activeModel)+_0x1b1a22(0x292)",
+          "insertBefore": false,
+          "code": "buildRunningHubWorkflowImageMenuGroupHTML(activeModel)+_0x1b1a22(0x261)+buildCoolImageMenuGroupHTML(activeModel)+_0x1b1a22(0x292)"
+        },
+        {
+          "what": "③ setImageModelTriggerIcon 中 apimart 分支后加 cool 分支",
+          "search": "if(_0x1b6037===_0x14990f(0x242)){setApimartImageModelTriggerIcon(_0x2206f2,_0x2c9a36);return;}",
+          "insertBefore": false,
+          "code": "if(_0x1b6037===_0x14990f(0x242)){setApimartImageModelTriggerIcon(_0x2206f2,_0x2c9a36);return;}if(_0x1b6037==='cool'){const _0x4d3c7e=createImageTriggerIcon(_0x2206f2,'div');if(_0x4d3c7e){_0x4d3c7e['className']='image-model-trigger-icon image-model-trigger-badge',_0x4d3c7e['innerText']='CL',replaceImageModelTriggerFirstIcon(_0x2206f2,_0x4d3c7e);}return;}"
+        },
+        {
+          "what": "④ renderImageModelTriggerIconHTML 中 apimart 分支后加 cool 分支",
+          "search": "if(_0x7b72cb===_0x49249c(0x242))return'<div\\x20class=\\x22image-model-trigger-icon\\x20image-model-trigger-badge\\x20image-model-trigger-icon-apimart\\x22>AM</div>';",
+          "insertBefore": false,
+          "code": "if(_0x7b72cb===_0x49249c(0x242))return'<div\\x20class=\\x22image-model-trigger-icon\\x20image-model-trigger-badge\\x20image-model-trigger-icon-apimart\\x22>AM</div>';if(_0x7b72cb==='cool')return'<div\\x20class=\\x22image-model-trigger-icon\\x20image-model-trigger-badge\\x22>CL</div>';"
+        }
+      ]
+    },
+
+    "11_src_components_video-node_parameterPanelModelHelpers.js": {
+      "file": "src/components/video-node/parameterPanelModelHelpers.js",
+      "note": "AI 视频节点菜单辅助函数。混淆文件。需新增 buildCoolVideoLogoHTML 和 buildCoolVideoMenuItemsHtml 函数。",
+      "changes": [
+        {
+          "what": "① 新增 buildCoolVideoLogoHTML（在 buildAgnesVideoLogoHTML 之后插入）",
+          "search": "export function buildAgnesVideoLogoHTML(_0x1f5682=0x14){",
+          "insertBefore": true,
+          "code": "export function buildCoolVideoLogoHTML(_0x4ae21a=0x14){const _0x3a6fc3=Number(_0x4ae21a)||0x14,_0x1a9f12=_0x3a6fc3<=0xc?'node-menu-icon-small':'node-menu-icon';return'<div class=\"'+_0x1a9f12+' node-menu-icon-badge node-menu-icon-badge-dark\">CL</div>';}\n"
+        },
+        {
+          "what": "② 新增 buildCoolVideoMenuItemsHtml（在 buildAgnesVideoMenuItemsHtml 之后插入）",
+          "search": "export function buildAgnesVideoMenuItemsHtml(_0x189c05){",
+          "insertBefore": true,
+          "code": "export function buildCoolVideoMenuItemsHtml(_0x5e8dc1){return getModelsByKind('video')['filter'](_0x2a5b08=>{const _0x25e7e1=_0x2a5b08?.['provider']==='cool'&&_0x2a5b08?.['adapterType']==='modelApi';if(!_0x25e7e1)return![];const _0x4767a4=getManifestVideoMenu(_0x2a5b08);return!!_0x4767a4&&['cool-video','cool-video-vip','cool-video-seedance']['includes'](_0x4767a4['group']||'');})['sort']((_0x49ecaf,_0x2153a2)=>Number(getManifestVideoMenu(_0x49ecaf)?.['order']||0)-Number(getManifestVideoMenu(_0x2153a2)?.['order']||0))['map'](_0x2c5e88=>{const _0x5f4e17=getManifestVideoMenu(_0x2c5e88);return renderNodeMenuItem({'modelId':_0x2c5e88['modelId'],'provider':'cool','label':_0x5f4e17?.['label']||_0x2c5e88['displayName'],'description':_0x5f4e17?.['subtitle']||_0x2c5e88['description']||'','iconHtml':buildCoolVideoLogoHTML(0x14),'vip':_0x2c5e88['vip']===!![]},{'activeModel':_0x5e8dc1});})['join']('');}\n"
+        }
+      ]
+    },
+
+    "12_src_components_video-node_parameterPanelModule.js": {
+      "file": "src/components/video-node/parameterPanelModule.js",
+      "note": "AI 视频节点参数面板。混淆文件(120KB)。需在 import 中加 buildCoolVideoMenuItemsHtml,buildCoolVideoLogoHTML；在视频菜单数组中 Agnes 之后插入 COOL 分组。",
+      "changes": [
+        {
+          "what": "① import 语句中加 buildCoolVideoMenuItemsHtml,buildCoolVideoLogoHTML",
+          "search": "HTML,buildAgnesVideoMenuItemsHtml,buildApimartVideoMenuItemsHtml,buildApimartVideoLogoHTML,buildDreaminaVideoLogoHTML",
+          "insertBefore": false,
+          "code": "HTML,buildAgnesVideoMenuItemsHtml,buildApimartVideoMenuItemsHtml,buildApimartVideoLogoHTML,buildCoolVideoMenuItemsHtml,buildCoolVideoLogoHTML,buildDreaminaVideoLogoHTML"
+        },
+        {
+          "what": "② 视频菜单数组中 Agnes 项之后插入 COOL 项",
+          "search": "'iconHtml':buildAgnesVideoLogoHTML(0x14),'itemsHtml':buildAgnesVideoMenuItemsHtml(_0x390e8a)},{'id':_0xc9fc70(0x255)",
+          "insertBefore": false,
+          "code": "'iconHtml':buildAgnesVideoLogoHTML(0x14),'itemsHtml':buildAgnesVideoMenuItemsHtml(_0x390e8a)},{'id':'cool','label':'COOL','subtitle':'COOL (MJ API) 视频','iconHtml':buildCoolVideoLogoHTML(0x14),'itemsHtml':buildCoolVideoMenuItemsHtml(_0x390e8a)},{'id':_0xc9fc70(0x255)"
+        }
+      ]
+    },
+
+    "13_src_manifests_image_modelApi_index.js": {
+      "file": "src/manifests/image/modelApi/index.js",
+      "note": "图片模型清单聚合入口。原文件用 `export{...}from'./coolImageManifests.js'` re-export，这种语法不会把变量引入当前模块作用域，导致下方 vendorImageModelApiModelManifests 聚合数组引用 coolImageModelApiModelManifests 时报 `not defined`。需：① 把 re-export 改为 `import{...}from'./coolImageManifests.js';export{...};`（先 import 再 export）；② 两个聚合数组末尾追加 ...coolImageModelApiXxxManifests。",
+      "changes": [
+        {
+          "what": "① 把 `export{coolImageModelApiModelManifests,coolImageModelApiExecutionManifests}from'./coolImageManifests.js';` 改为 `import{...}from'./coolImageManifests.js';export{...};`（先 import 引入作用域，再 export 对外导出）",
+          "search": "export{coolImageModelApiModelManifests,coolImageModelApiExecutionManifests}from'./coolImageManifests.js';",
+          "insertBefore": false,
+          "code": "import{coolImageModelApiModelManifests,coolImageModelApiExecutionManifests}from'./coolImageManifests.js';export{coolImageModelApiModelManifests,coolImageModelApiExecutionManifests};"
+        },
+        {
+          "what": "② vendorImageModelApiModelManifests 数组末尾加 ...coolImageModelApiModelManifests",
+          "search": "...volcengineImageModelApiModelManifests]);export const vendorImageModelApiExecutionManifests",
+          "insertBefore": false,
+          "code": "...volcengineImageModelApiModelManifests,...coolImageModelApiModelManifests]);export const vendorImageModelApiExecutionManifests"
+        },
+        {
+          "what": "③ vendorImageModelApiExecutionManifests 数组末尾加 ...coolImageModelApiExecutionManifests",
+          "search": "...volcengineImageModelApiExecutionManifests]);",
+          "insertBefore": false,
+          "code": "...volcengineImageModelApiExecutionManifests,...coolImageModelApiExecutionManifests]);"
+        }
+      ]
+    },
+
+    "14_src_manifests_video_modelApi_vendorVideoModelApiManifests.js": {
+      "file": "src/manifests/video/modelApi/vendorVideoModelApiManifests.js",
+      "note": "视频模型清单聚合入口（混淆单行178KB）。VENDOR_VIDEO_MODELS 原始数组仅包含 APIMART/RUNNINGHUB/VOLCENGINE/AGNES 四家厂商数据（含 model 字段），下方两个 export 用 .map() 通过 createVideoModelApiManifest/createVideoExecutionManifest 转换为 manifest。cool 清单已是构建好的 manifest 对象（没有 model 字段），不能加入 VENDOR_VIDEO_MODELS，否则 createVideoExecutionManifest 校验报 missing model。正确做法：① 文件开头 import coolVideoModelApiModelManifests 和 coolVideoModelApiExecutionManifests；② 两个 export 处用 `[...VENDOR_VIDEO_MODELS.map(...), ...coolXxx]` 直接合并已构建的清单，跳过 map。",
+      "changes": [
+        {
+          "what": "① 文件最开头（const a419_0xa7ef95 之前）添加 import 两个 cool 清单",
+          "search": "const a419_0xa7ef95=a419_0x57e6;",
+          "insertBefore": true,
+          "code": "import{coolVideoModelApiModelManifests,coolVideoModelApiExecutionManifests}from'./coolVideoManifests.js';\n"
+        },
+        {
+          "what": "② vendorVideoModelApiModelManifests 改为 `[...VENDOR_VIDEO_MODELS.map(...), ...coolVideoModelApiModelManifests]`",
+          "search": "Object[a419_0xa7ef95(0x461)](VENDOR_VIDEO_MODELS[a419_0xa7ef95(0x481)](_0x442899=>createVideoModelApiManifest(",
+          "insertBefore": false,
+          "code": "Object[a419_0xa7ef95(0x461)]([...VENDOR_VIDEO_MODELS[a419_0xa7ef95(0x481)](_0x442899=>createVideoModelApiManifest("
+        },
+        {
+          "what": "②.1 vendorVideoModelApiModelManifests 末尾闭合处加 `,...coolVideoModelApiModelManifests`",
+          "search": "'ratioPolicy':getVideoManifestRatioPolicy(_0x442899)})));export const vendorVideoModelApiExecutionManifests",
+          "insertBefore": false,
+          "code": "'ratioPolicy':getVideoManifestRatioPolicy(_0x442899)})),...coolVideoModelApiModelManifests]);export const vendorVideoModelApiExecutionManifests"
+        },
+        {
+          "what": "③ vendorVideoModelApiExecutionManifests 改为 `[...VENDOR_VIDEO_MODELS.map(...), ...coolVideoModelApiExecutionManifests]`",
+          "search": "Object[a419_0xa7ef95(0x461)](VENDOR_VIDEO_MODELS[a419_0xa7ef95(0x481)](_0x412843=>createVideoExecutionManifest(",
+          "insertBefore": false,
+          "code": "Object[a419_0xa7ef95(0x461)]([...VENDOR_VIDEO_MODELS[a419_0xa7ef95(0x481)](_0x412843=>createVideoExecutionManifest("
+        },
+        {
+          "what": "③.1 vendorVideoModelApiExecutionManifests 末尾闭合处加 `,...coolVideoModelApiExecutionManifests`",
+          "search": "'resultTaskIdPath':_0x412843[a419_0xa7ef95(0x412)]||'task_id'})));",
+          "insertBefore": false,
+          "code": "'resultTaskIdPath':_0x412843[a419_0xa7ef95(0x412)]||'task_id'})),...coolVideoModelApiExecutionManifests]);"
+        }
+      ]
+    },
+
+    "15_src_manifests_video_modelApi_coolVideoManifests.js": {
+      "file": "src/manifests/video/modelApi/coolVideoManifests.js",
+      "note": "COOL 视频清单定义文件。完整修复历程（共7项）：① model/execution manifest kind 硬编码 'image'→覆盖为 'video'（否则 getModelsByKind('video') 查不到、assertModelExecutionContract 报错）。② bodyMapping 中 resolution 从 constant 改为 param（用户可选），新增 image_urls/video_urls 映射支持多参考图。③ 新增 COOL_VIDEO_RESOLUTION/RATIO/DURATION 三个 UI 字段定义，placement='resolution'（视频面板只渲染此 placement）。④ DURATION 改为 segmented+pillMenu 变体（2s/5s/8s/10s/15s 预设按钮，非拉杆）。⑤ extensions 中新增 fixedInputSlots（refImage+refVideo，isUploader:true），使'全能参考'区域渲染。⑥ 移除多余的 mode 字段（COOL API 由 files 数组自动决定生成模式）。⑦ inputSlots.maxByKind 支持 image:9 多参考图。",
+      "changes": [
+        {
+          "what": "① createVideoModel 函数中，createImageModelApiManifest 返回后覆盖 kind 为 'video'",
+          "search": "function createVideoModel({ modelId, executionId, displayName, subtitle, order, group }) {\n  return createImageModelApiManifest({",
+          "insertBefore": false,
+          "code": "function createVideoModel({ modelId, executionId, displayName, subtitle, order, group }) {\n  const manifest = createImageModelApiManifest({"
+        },
+        {
+          "what": "①.1 createVideoModel 函数末尾，覆盖 kind",
+          "search": "    ratioPolicy: Object.freeze({\n      capability: 'aspectRatio',\n    }),\n  });\n}",
+          "insertBefore": false,
+          "code": "    ratioPolicy: Object.freeze({\n      capability: 'aspectRatio',\n    }),\n  });\n  return Object.freeze({ ...manifest, kind: 'video' });\n}"
+        },
+        {
+          "what": "② createCoolVideoExecution 函数中，createModelApiExecutionManifest 返回后覆盖 kind 为 'video'",
+          "search": "function createCoolVideoExecution({ id, model, bodyMappingOverrides }) {\n  return createModelApiExecutionManifest({",
+          "insertBefore": false,
+          "code": "function createCoolVideoExecution({ id, model, bodyMappingOverrides }) {\n  const exec = createModelApiExecutionManifest({"
+        },
+        {
+          "what": "②.1 createCoolVideoExecution 函数末尾，覆盖 kind",
+          "search": "    extensions: Object.freeze({\n      bodyResolver: 'coolGenerate',\n    }),\n  });\n}",
+          "insertBefore": false,
+          "code": "    extensions: Object.freeze({\n      bodyResolver: 'coolGenerate',\n    }),\n  });\n  return Object.freeze({ ...exec, kind: 'video' });\n}"
+        },
+        {
+          "what": "③ COOL_VIDEO_BODY_MAPPING 新增 resolution/duration/image_urls/video_urls 映射",
+          "search": "const COOL_VIDEO_BODY_MAPPING = Object.freeze([\n  Object.freeze({ path: 'model', from: 'model' }),\n  Object.freeze({ path: 'prompt', from: 'prompt' }),\n  Object.freeze({ path: 'n', from: 'constant', value: 1 }),\n]);",
+          "insertBefore": false,
+          "code": "const COOL_VIDEO_BODY_MAPPING = Object.freeze([\n  Object.freeze({ path: 'model', from: 'model' }),\n  Object.freeze({ path: 'prompt', from: 'prompt' }),\n  Object.freeze({ path: 'n', from: 'constant', value: 1 }),\n  Object.freeze({ path: 'resolution', from: 'param', field: 'resolution', defaultValue: '720p' }),\n  Object.freeze({ path: 'ratio', from: 'param', field: ['resolvedRatioLabel', 'aspectRatio'], defaultValue: '16:9' }),\n  Object.freeze({ path: 'duration', from: 'param', field: 'duration', defaultValue: 5 }),\n  Object.freeze({ path: 'timeout', from: 'constant', value: 1800 }),\n  Object.freeze({ path: 'image_urls', from: 'inputImages', omitWhenEmpty: true }),\n  Object.freeze({ path: 'video_urls', from: 'inputVideos', omitWhenEmpty: true }),\n]);"
+        },
+        {
+          "what": "④ 新增 COOL_VIDEO_RESOLUTION_FIELD（segmented, placement=resolution, 480P/720P/1080P）",
+          "search": "// ---- Helper ----\nfunction createCoolVideoExecution",
+          "insertBefore": true,
+          "code": "// ---- COOL Video UI Fields (参考 APIMart) ----\nconst COOL_VIDEO_RESOLUTION_FIELD = Object.freeze({\n  id: 'resolution', type: 'segmented', placement: 'resolution',\n  label: '分辨率', defaultValue: '720p',\n  options: Object.freeze([\n    Object.freeze({ value: '480p', label: '480P' }),\n    Object.freeze({ value: '720p', label: '720P' }),\n    Object.freeze({ value: '1080p', label: '1080P' }),\n  ]),\n});\n\nconst COOL_VIDEO_RATIO_FIELD = Object.freeze({\n  id: 'aspectRatio', displayRole: 'aspectRatio', type: 'segmented', placement: 'resolution',\n  label: '比例', defaultValue: '16:9',\n  options: Object.freeze([\n    Object.freeze({ value: '16:9', label: '16:9' }),\n    Object.freeze({ value: '9:16', label: '9:16' }),\n    Object.freeze({ value: '1:1', label: '1:1' }),\n    Object.freeze({ value: '4:3', label: '4:3' }),\n    Object.freeze({ value: '3:4', label: '3:4' }),\n  ]),\n});\n\nconst COOL_VIDEO_DURATION_FIELD = Object.freeze({\n  id: 'duration', type: 'segmented', placement: 'resolution', variant: 'pillMenu',\n  label: '时长', defaultValue: 5,\n  options: Object.freeze([\n    Object.freeze({ value: 2, label: '2s' }),\n    Object.freeze({ value: 5, label: '5s' }),\n    Object.freeze({ value: 8, label: '8s' }),\n    Object.freeze({ value: 10, label: '10s' }),\n    Object.freeze({ value: 15, label: '15s' }),\n  ]),\n});\n\n"
+        },
+        {
+          "what": "⑤ createVideoModel 中 inputSlots 支持 image:9 多参考图 + fields 使用新字段 + extensions.fixedInputSlots",
+          "search": "    inputSlots: Object.freeze({\n      allowedKinds: Object.freeze(['text', 'image']),\n      minByKind: Object.freeze({ image: 0 }),\n      maxByKind: Object.freeze({ image: 1 }),\n    }),\n    fields: [],\n    extensions: Object.freeze({\n      videoMenu: Object.freeze({",
+          "insertBefore": false,
+          "code": "    inputSlots: Object.freeze({\n      allowedKinds: Object.freeze(['text', 'image', 'video']),\n      minByKind: Object.freeze({ image: 0, video: 0 }),\n      maxByKind: Object.freeze({ image: 9, video: 2, audio: 0 }),\n    }),\n    fields: [COOL_VIDEO_RESOLUTION_FIELD, COOL_VIDEO_RATIO_FIELD, COOL_VIDEO_DURATION_FIELD],\n    extensions: Object.freeze({\n      videoMenu: Object.freeze({"
+        },
+        {
+          "what": "⑤.1 extensions 中新增 fixedInputSlots（refImage+refVideo，isUploader:true）",
+          "search": "      videoMenu: Object.freeze({\n        group: group || 'cool-video',\n        order,\n        title: displayName,\n        subtitle: 'COOL · ' + subtitle,\n        gap: 5,\n      }),\n    }),",
+          "insertBefore": false,
+          "code": "      videoMenu: Object.freeze({\n        group: group || 'cool-video',\n        order,\n        title: displayName,\n        subtitle: 'COOL · ' + subtitle,\n        gap: 5,\n      }),\n      fixedInputSlots: Object.freeze([\n        Object.freeze({ id: 'refImage', kind: 'image', label: '参考图', displayOrder: 0, isUploader: true }),\n        Object.freeze({ id: 'refVideo', kind: 'video', label: '参考视频', displayOrder: 1, isUploader: true }),\n      ]),\n    }),"
+        }
+      ]
+    },
+
+    "20_backend_services_remote_proxy_route_service.py": {
+      "file": "backend/services/remote_proxy_route_service.py",
+      "note": "COOL 视频轮询响应后处理。根因：COOL API 返回的响应包含 reference_files 数组（6张输入参考图URL），前端 extractVideoUrls 的 fallback 递归遍历逻辑会把这些参考图URL误当成视频结果提取，导致视频节点收到PNG图片而非MP4视频。修复：在 _handle_task_proxy 中对 COOL 任务响应（/v1/cool/task/ in api_url）调用 _sanitize_cool_task_response，移除 reference_files 字段，只保留 result.url（真正的视频URL）。另外 __init__ 新增 output_dir_getter 参数（可选，默认 os.path.abspath('output')）。",
+      "changes": [
+        {
+          "what": "① __init__ 新增 output_dir_getter 参数",
+          "search": "class RemoteProxyRouteService:\n    def __init__(\n        self,\n        *,\n        read_body,\n        subscription_gate_service_getter,\n        video_vip_workflow_ids,\n    ):\n        self._read_body = read_body\n        self._get_subscription_gate_service = subscription_gate_service_getter\n        self._video_vip_workflow_ids = {",
+          "insertBefore": false,
+          "code": "class RemoteProxyRouteService:\n    def __init__(\n        self,\n        *,\n        read_body,\n        subscription_gate_service_getter,\n        video_vip_workflow_ids,\n        output_dir_getter=None,\n    ):\n        self._read_body = read_body\n        self._get_subscription_gate_service = subscription_gate_service_getter\n        self._video_vip_workflow_ids = {"
+        },
+        {
+          "what": "①.1 __init__ 末尾添加 self._get_output_dir",
+          "search": "            for workflow_id in (video_vip_workflow_ids or set())\n            if str(workflow_id or \"\").strip()\n        }",
+          "insertBefore": false,
+          "code": "            for workflow_id in (video_vip_workflow_ids or set())\n            if str(workflow_id or \"\").strip()\n        }\n        self._get_output_dir = output_dir_getter or (lambda: os.path.abspath(\"output\"))"
+        },
+        {
+          "what": "② 文件顶部新增 import os, tempfile",
+          "search": "import json\nimport urllib.error\nimport urllib.parse\nimport urllib.request",
+          "insertBefore": false,
+          "code": "import json\nimport os\nimport tempfile\nimport urllib.error\nimport urllib.parse\nimport urllib.request"
+        },
+        {
+          "what": "③ _handle_task_proxy 中添加 is_cool_task 检测和响应后处理",
+          "search": "        is_cool_task = \"/v1/cool/task/\" in api_url\n        try:\n            try:\n                requests = self._requests_module()\n                resp = requests.get(api_url, headers=headers, timeout=30)\n                return self._proxy_response(resp.status_code, resp.content)",
+          "insertBefore": false,
+          "code": "        is_cool_task = \"/v1/cool/task/\" in api_url\n\n        raw_status = None\n        raw_body = None\n        try:\n            # Try requests module first\n            try:\n                requests = self._requests_module()\n                resp = requests.get(api_url, headers=headers, timeout=30)\n                raw_status = resp.status_code\n                raw_body = resp.content\n            except ImportError:\n                pass\n            except Exception as exc:\n                print(f\"[task-proxy] requests failed, falling back to urllib: {exc}\")\n\n            # Fallback to urllib only if requests didn't succeed\n            if raw_status is None:\n                req = urllib.request.Request(api_url, headers=headers, method=\"GET\")\n                try:\n                    with urllib.request.urlopen(req, timeout=30) as resp:\n                        raw_status = resp.status\n                        raw_body = resp.read()\n                except urllib.error.HTTPError as exc:\n                    raw_status = exc.code\n                    raw_body = exc.read()\n                except Exception as exc:\n                    return self._json_err(500, f\"Urllib polling error: {str(exc)}\")\n\n            if raw_status is None:\n                return self._json_err(500, \"All polling methods failed\")\n\n            # Post-process COOL task responses: strip reference_files to prevent\n            # frontend extractVideoUrls fallback from picking up reference image URLs\n            if is_cool_task and raw_status == 200 and raw_body:\n                raw_body = self._sanitize_cool_task_response(raw_body)\n\n            return self._proxy_response(raw_status, raw_body)\n        except Exception as exc:\n            return self._json_err(500, f\"Task proxy global error: {repr(exc)}\")"
+        },
+        {
+          "what": "④ 新增 _sanitize_cool_task_response 静态方法（移除 reference_files）",
+          "search": "    def _handle_upload_proxy(self, handler):",
+          "insertBefore": true,
+          "code": "    @staticmethod\n    def _sanitize_cool_task_response(raw_body):\n        \"\"\"Remove reference_files from COOL task response to prevent frontend\n        from extracting reference image URLs as video results.\"\"\"\n        try:\n            data = json.loads(raw_body)\n        except (json.JSONDecodeError, ValueError):\n            return raw_body\n\n        if not isinstance(data, dict):\n            return raw_body\n\n        # reference_files contains input reference image/video URLs that\n        # frontend extractVideoUrls may incorrectly pick up via deep traversal\n        if \"reference_files\" in data:\n            data.pop(\"reference_files\", None)\n            print(f\"[COOL-TASK] Stripped reference_files from task {data.get('task_id', '?')} (status={data.get('status')})\")\n            return json.dumps(data, ensure_ascii=False).encode(\"utf-8\")\n\n        return raw_body\n\n"
+        }
+      ]
+    },
+
+    "21_backend_services_local_media_processing_route_service.py": {
+      "file": "backend/services/local_media_processing_route_service.py",
+      "note": "视频缩略图生成（_handle_video_first_frame）增强。根因：① COOL 视频结果有时是远程URL，原代码只接受本地路径→404。② ffmpeg 命令 ffmpeg -ss 0 -i input -frames:v 1 对图片输入静默失败（returncode=0 但不生成输出文件）。修复：① 新增远程URL检测，下载到临时文件再处理；下载失败时 fallback 到 thumbnail_url。② 检测 src 是图片时（.png/.jpg/.jpeg/.webp/.bmp/.gif）改用图片格式转换命令（去掉 -ss 0 -frames:v 1）。③ ffmpeg returncode=0 但输出文件不存在时返回 500 而非 200。",
+      "changes": [
+        {
+          "what": "① _handle_video_first_frame 新增远程URL检测+下载+图片源分支命令",
+          "search": "    def _handle_video_first_frame(self, handler):\n        data, error = self._read_json_request(handler)\n        if error is not None:\n            return error\n\n        src_path = (data.get(\"src\") or \"\").strip()\n        local_src, error = self._validate_src_path(\n            src_path,\n            missing_message=\"Source video not found\",\n        )\n        if error is not None:\n            return error\n\n        try:\n            stat_result = os.stat(local_src)\n        except Exception:\n            return self._json_err(500, \"Cannot stat source video\")",
+          "insertBefore": false,
+          "code": "    def _handle_video_first_frame(self, handler):\n        data, error = self._read_json_request(handler)\n        if error is not None:\n            return error\n\n        src_path = (data.get(\"src\") or \"\").strip()\n\n        # Support remote HTTP(S) URLs — download to temp file first\n        is_remote_url = src_path.startswith(\"http://\") or src_path.startswith(\"https://\")\n        if is_remote_url:\n            local_src, error = self._download_to_temp_file(src_path, ext=\".mp4\")\n            if error is not None:\n                # If remote download fails, try using thumbnail_url if provided\n                thumb_url = (data.get(\"thumbnailUrl\") or data.get(\"thumbnail_url\") or \"\").strip()\n                if thumb_url.startswith(\"http\"):\n                    return self._json_ok({\n                        \"success\": True,\n                        \"url\": thumb_url,\n                        \"localPath\": \"\",\n                        \"remoteFallback\": True,\n                    })\n                return error\n        else:\n            local_src, error = self._validate_src_path(\n                src_path,\n                missing_message=\"Source video not found\",\n            )\n            if error is not None:\n                return error\n\n        try:\n            stat_result = os.stat(local_src)\n        except Exception:\n            if is_remote_url:\n                return self._json_err(500, \"Cannot stat downloaded video\")\n            return self._json_err(500, \"Cannot stat source video\")"
+        },
+        {
+          "what": "② ffmpeg 命令区分图片源和视频源",
+          "search": "        if not os.path.exists(out_path):\n            try:\n                cmd = [\n                    self._ffmpeg(),\n                    \"-y\",\n                    \"-ss\",\n                    \"0\",\n                    \"-i\",\n                    local_src,\n                    \"-frames:v\",\n                    \"1\",\n                    \"-vf\",\n                    \"scale=240:-2\",\n                    \"-q:v\",\n                    \"8\",\n                    \"-an\",\n                    out_path,\n                ]\n                returncode, _, stderr = self._run_process(\n                    cmd,\n                    timeout=30,\n                    startupinfo=self._startupinfo(),\n                )\n                if returncode != 0:\n                    print(\n                        f\"FFmpeg first_frame error: {(stderr or b'').decode('utf-8', errors='ignore')}\"\n                    )\n                    return self._json_err(500, \"FFmpeg processing failed\")\n            except subprocess.TimeoutExpired:\n                return self._json_err(504, \"FFmpeg process timeout\")\n            except Exception as exc:\n                return self._json_err(500, f\"Error extracting first frame: {str(exc)}\")",
+          "insertBefore": false,
+          "code": "        if not os.path.exists(out_path):\n            try:\n                # Detect if source is an image (not a video) — ffmpeg command differs\n                src_lower = src_path.lower()\n                is_image_src = src_lower.endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'))\n\n                if is_image_src:\n                    # For images: simple format conversion with scaling (no -ss/-frames:v)\n                    cmd = [\n                        self._ffmpeg(),\n                        \"-y\",\n                        \"-i\",\n                        local_src,\n                        \"-vf\",\n                        \"scale=240:-2\",\n                        \"-q:v\",\n                        \"8\",\n                        \"-an\",\n                        out_path,\n                    ]\n                else:\n                    # For videos: extract first frame\n                    cmd = [\n                        self._ffmpeg(),\n                        \"-y\",\n                        \"-ss\",\n                        \"0\",\n                        \"-i\",\n                        local_src,\n                        \"-frames:v\",\n                        \"1\",\n                        \"-vf\",\n                        \"scale=240:-2\",\n                        \"-q:v\",\n                        \"8\",\n                        \"-an\",\n                        out_path,\n                    ]\n                returncode, _, stderr = self._run_process(\n                    cmd,\n                    timeout=30,\n                    startupinfo=self._startupinfo(),\n                )\n                if returncode != 0:\n                    print(\n                        f\"FFmpeg first_frame error: {(stderr or b'').decode('utf-8', errors='ignore')}\"\n                    )\n                    return self._json_err(500, \"FFmpeg processing failed\")\n                if not os.path.exists(out_path):\n                    return self._json_err(500, \"FFmpeg produced no output\")\n            except subprocess.TimeoutExpired:\n                return self._json_err(504, \"FFmpeg process timeout\")\n            except Exception as exc:\n                return self._json_err(500, f\"Error extracting first frame: {str(exc)}\")"
+        },
+        {
+          "what": "③ 新增 _download_to_temp_file 辅助方法（下载远程URL到临时文件）",
+          "search": "        rel_path = f\"output/VideoThumbs/{filename}\"\n        return self._json_ok({\"success\": True, \"url\": \"/\" + rel_path, \"localPath\": rel_path})\n\n    def handle_post(self, handler, path):",
+          "insertBefore": false,
+          "code": "        rel_path = f\"output/VideoThumbs/{filename}\"\n        return self._json_ok({\"success\": True, \"url\": \"/\" + rel_path, \"localPath\": rel_path})\n\n    def _download_to_temp_file(self, url, ext=\".mp4\"):\n        \"\"\"Download a remote URL to a temp file, return (local_path, error)\"\"\"\n        import tempfile\n        try:\n            import requests as _req_mod\n            resp = _req_mod.get(url, timeout=120, stream=True)\n            resp.raise_for_status()\n\n            # Determine content type extension\n            content_type = resp.headers.get(\"Content-Type\", \"\")\n            if \"video\" in content_type or \"mp4\" in content_type:\n                ext = \".mp4\"\n            elif \"webm\" in content_type:\n                ext = \".webm\"\n\n            fd, tmp_path = tempfile.mkstemp(suffix=ext, prefix=\"cool_video_\")\n            with os.fdopen(fd, \"wb\") as f:\n                for chunk in resp.iter_content(chunk_size=8192):\n                    if chunk:\n                        f.write(chunk)\n            return tmp_path, None\n        except Exception as exc:\n            return None, self._json_err(502, f\"Failed to download remote video: {str(exc)}\")\n\n    def handle_post(self, handler, path):"
+        }
+      ]
+    },
+
+    "22_server.py": {
+      "file": "server.py",
+      "note": "RemoteProxyRouteService 构造调用新增 output_dir_getter 参数，传入 OUTPUT_DIR（与 LocalMediaProcessingRouteService 一致）。",
+      "changes": [
+        {
+          "what": "REMOTE_PROXY_ROUTE_SERVICE 构造新增 output_dir_getter=lambda: OUTPUT_DIR",
+          "search": "REMOTE_PROXY_ROUTE_SERVICE = RemoteProxyRouteService(\n    read_body=_read_body,\n    subscription_gate_service_getter=lambda: SUBSCRIPTION_GATE_SERVICE,\n    video_vip_workflow_ids=VIDEO_VIP_WORKFLOW_IDS,\n)",
+          "insertBefore": false,
+          "code": "REMOTE_PROXY_ROUTE_SERVICE = RemoteProxyRouteService(\n    read_body=_read_body,\n    subscription_gate_service_getter=lambda: SUBSCRIPTION_GATE_SERVICE,\n    video_vip_workflow_ids=VIDEO_VIP_WORKFLOW_IDS,\n    output_dir_getter=lambda: OUTPUT_DIR,\n)"
+        }
+      ]
+    },
+
+    "16_src_components_aigenImage_uiModule.impl.js": {
+      "file": "src/components/aigenImage/uiModule.impl.js",
+      "note": "AI 生图节点模型菜单子菜单 toggle 注册（混淆）。每个厂商通过 bindImageModelMenuSubmenu() 注册 toggleSelector+submenuSelector。之前漏了 COOL，导致子菜单 HTML 存在但 JS 未绑定事件→不显示。在 Agnes 调用后插入。",
+      "changes": [
+        {
+          "what": "在 Agnes 的 bindImageModelMenuSubmenu 之后插入 COOL",
+          "search": "'agnes',_0x24f1c1)}),bindImageModelMenuSubmenu({'modelMenu':_0x5f2ba4,'modelTrigger':_0x27a3c5,'modelLabel':_0x4a5074,'nodeId':this[_0x1c8e2f(0x10f)],'store':_0x246dc4,'fallbackNodeData':this['_data'],'toggleSelector':",
+          "insertBefore": false,
+          "code": "'agnes',_0x24f1c1)}),bindImageModelMenuSubmenu({'modelMenu':_0x5f2ba4,'modelTrigger':_0x27a3c5,'modelLabel':_0x4a5074,'nodeId':this[_0x1c8e2f(0x10f)],'store':_0x246dc4,'fallbackNodeData':this['_data'],'toggleSelector':'[data-cool-toggle]','submenuSelector':'.img-cool-submenu','defaultProvider':'cool','buildModelPatch':_0x54fc03,'afterSelect':({item:_coolSel})=>setImageModelTriggerIcon(_0x27a3c5,'cool',_coolSel)}),bindImageModelMenuSubmenu({'modelMenu':_0x5f2ba4,'modelTrigger':_0x27a3c5,'modelLabel':_0x4a5074,'nodeId':this[_0x1c8e2f(0x10f)],'store':_0x246dc4,'fallbackNodeData':this['_data'],'toggleSelector':"
+        }
+      ]
+    }
+  }
+}

@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,6 +19,7 @@ class RemoteProxyRouteService:
         read_body,
         subscription_gate_service_getter,
         video_vip_workflow_ids,
+        output_dir_getter=None,
     ):
         self._read_body = read_body
         self._get_subscription_gate_service = subscription_gate_service_getter
@@ -25,6 +28,7 @@ class RemoteProxyRouteService:
             for workflow_id in (video_vip_workflow_ids or set())
             if str(workflow_id or "").strip()
         }
+        self._get_output_dir = output_dir_getter or (lambda: os.path.abspath("output"))
 
     @staticmethod
     def _json_ok(data):
@@ -145,27 +149,67 @@ class RemoteProxyRouteService:
             "Accept": "application/json",
             "User-Agent": "Mozilla/5.0",
         }
+        is_cool_task = "/v1/cool/task/" in api_url
+
+        raw_status = None
+        raw_body = None
         try:
+            # Try requests module first
             try:
                 requests = self._requests_module()
                 resp = requests.get(api_url, headers=headers, timeout=30)
-                return self._proxy_response(resp.status_code, resp.content)
+                raw_status = resp.status_code
+                raw_body = resp.content
             except ImportError:
                 pass
-            except Exception:
-                pass
-
-            req = urllib.request.Request(api_url, headers=headers, method="GET")
-            try:
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    resp_data = resp.read()
-                return self._proxy_response(200, resp_data)
-            except urllib.error.HTTPError as exc:
-                return self._proxy_response(exc.code, exc.read())
             except Exception as exc:
-                return self._json_err(500, f"Urllib polling error: {str(exc)}")
+                print(f"[task-proxy] requests failed, falling back to urllib: {exc}")
+
+            # Fallback to urllib only if requests didn't succeed
+            if raw_status is None:
+                req = urllib.request.Request(api_url, headers=headers, method="GET")
+                try:
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        raw_status = resp.status
+                        raw_body = resp.read()
+                except urllib.error.HTTPError as exc:
+                    raw_status = exc.code
+                    raw_body = exc.read()
+                except Exception as exc:
+                    return self._json_err(500, f"Urllib polling error: {str(exc)}")
+
+            if raw_status is None:
+                return self._json_err(500, "All polling methods failed")
+
+            # Post-process COOL task responses: strip reference_files to prevent
+            # frontend extractVideoUrls fallback from picking up reference image URLs
+            if is_cool_task and raw_status == 200 and raw_body:
+                raw_body = self._sanitize_cool_task_response(raw_body)
+
+            return self._proxy_response(raw_status, raw_body)
         except Exception as exc:
             return self._json_err(500, f"Task proxy global error: {repr(exc)}")
+
+    @staticmethod
+    def _sanitize_cool_task_response(raw_body):
+        """Remove reference_files from COOL task response to prevent frontend
+        from extracting reference image URLs as video results."""
+        try:
+            data = json.loads(raw_body)
+        except (json.JSONDecodeError, ValueError):
+            return raw_body
+
+        if not isinstance(data, dict):
+            return raw_body
+
+        # reference_files contains input reference image/video URLs that
+        # frontend extractVideoUrls may incorrectly pick up via deep traversal
+        if "reference_files" in data:
+            data.pop("reference_files", None)
+            print(f"[COOL-TASK] Stripped reference_files from task {data.get('task_id', '?')} (status={data.get('status')})")
+            return json.dumps(data, ensure_ascii=False).encode("utf-8")
+
+        return raw_body
 
     def _handle_upload_proxy(self, handler):
         query = self._parse_query(handler.path)
@@ -240,8 +284,56 @@ class RemoteProxyRouteService:
             error_prefix=error_prefix,
         )
 
+    def _handle_cool_generate(self, handler):
+        """Proxy POST to COOL API: /v1/cool/generate"""
+        data, error = self._read_json_request(handler)
+        if error is not None:
+            return error
+
+        api_url = (data.get("apiUrl") or "").strip()
+        api_key = (data.get("apiKey") or "").strip()
+        if not api_url or not api_key:
+            return self._json_err(400, "Missing apiUrl or apiKey for COOL")
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0",
+        }
+        # Remove routing fields before forwarding
+        payload = dict(data)
+        payload.pop("apiUrl", None)
+        payload.pop("apiKey", None)
+
+        # Convert image_urls to COOL files format (auto-upload via URL)
+        # COOL API requires @图片1 @图片2 ... in prompt to reference files
+        image_urls = payload.pop("image_urls", None)
+        if image_urls and isinstance(image_urls, list) and len(image_urls) > 0:
+            files = []
+            refs = []
+            for i, url in enumerate(image_urls, 1):
+                url_str = str(url or "").strip()
+                if url_str:
+                    files.append({"url": url_str, "type": "image"})
+                    refs.append(f"@图片{i}")
+            if files:
+                payload["files"] = files
+                # Append @图片1 @图片2 ... to prompt so COOL API references them
+                prompt = (payload.get("prompt") or "").strip()
+                ref_str = " ".join(refs)
+                if ref_str not in prompt:
+                    payload["prompt"] = f"{prompt} {ref_str}".strip() if prompt else ref_str
+
+        return self._post_json_to_remote(
+            api_url,
+            payload,
+            timeout=900,
+            error_prefix="COOL API proxy error",
+        )
     def handle_get(self, handler, path):
         if path == "/api/v2/proxy/task":
+            return self._handle_task_proxy(handler)
+        if path == "/api/v2/proxy/cool":
             return self._handle_task_proxy(handler)
         return None
 
@@ -266,4 +358,6 @@ class RemoteProxyRouteService:
                 error_prefix="RunningHub cancel proxy error",
             )
 
+        if path == "/api/v2/proxy/cool":
+            return self._handle_cool_generate(handler)
         return None

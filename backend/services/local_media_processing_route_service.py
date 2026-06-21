@@ -1262,16 +1262,44 @@ class LocalMediaProcessingRouteService:
             return error
 
         src_path = (data.get("src") or "").strip()
-        local_src, error = self._validate_src_path(
-            src_path,
-            missing_message="Source video not found",
-        )
-        if error is not None:
-            return error
+        print(f"[VTHUMB-DEBUG] first_frame called, src={src_path[:100]}")
+
+        # Support remote HTTP(S) URLs — download to temp file first
+        is_remote_url = src_path.startswith("http://") or src_path.startswith("https://")
+        if is_remote_url:
+            print(f"[VTHUMB-DEBUG] Remote URL detected, downloading...")
+            local_src, error = self._download_to_temp_file(src_path, ext=".mp4")
+            if error is not None:
+                print(f"[VTHUMB-DEBUG] Download failed: {error}")
+                # If remote download fails, try using thumbnail_url if provided
+                thumb_url = (data.get("thumbnailUrl") or data.get("thumbnail_url") or "").strip()
+                if thumb_url.startswith("http"):
+                    print(f"[VTHUMB-DEBUG] Fallback to thumbnail_url: {thumb_url[:80]}")
+                    return self._json_ok({
+                        "success": True,
+                        "url": thumb_url,
+                        "localPath": "",
+                        "remoteFallback": True,
+                    })
+                return error
+            print(f"[VTHUMB-DEBUG] Downloaded to temp: {local_src}")
+        else:
+            local_src, error = self._validate_src_path(
+                src_path,
+                missing_message="Source video not found",
+            )
+            if error is not None:
+                print(f"[VTHUMB-DEBUG] _validate_src_path failed: {error}")
+                return error
+            print(f"[VTHUMB-DEBUG] Local src resolved: {local_src}")
 
         try:
             stat_result = os.stat(local_src)
-        except Exception:
+            print(f"[VTHUMB-DEBUG] stat ok, size={stat_result.st_size}, mtime_ns={getattr(stat_result, 'st_mtime_ns', 0)}")
+        except Exception as exc:
+            print(f"[VTHUMB-DEBUG] stat failed: {exc}")
+            if is_remote_url:
+                return self._json_err(500, "Cannot stat downloaded video")
             return self._json_err(500, "Cannot stat source video")
 
         norm_src = os.path.normpath(src_path.lstrip("/"))
@@ -1281,47 +1309,107 @@ class LocalMediaProcessingRouteService:
             f"{stat_result.st_size}"
         )
         digest = hashlib.sha1(signature.encode("utf-8", errors="ignore")).hexdigest()[:12]
+        print(f"[VTHUMB-DEBUG] digest={digest}, signature={signature[:80]}")
 
         thumb_dir = os.path.join(self._output_dir(), "VideoThumbs")
         os.makedirs(thumb_dir, exist_ok=True)
         filename = f"vthumb_{digest}.jpg"
         out_path = os.path.join(thumb_dir, filename)
+        print(f"[VTHUMB-DEBUG] out_path={out_path}, exists={os.path.exists(out_path)}")
 
         if not os.path.exists(out_path):
             try:
-                cmd = [
-                    self._ffmpeg(),
-                    "-y",
-                    "-ss",
-                    "0",
-                    "-i",
-                    local_src,
-                    "-frames:v",
-                    "1",
-                    "-vf",
-                    "scale=240:-2",
-                    "-q:v",
-                    "8",
-                    "-an",
-                    out_path,
-                ]
-                returncode, _, stderr = self._run_process(
+                # Detect if source is an image (not a video) — ffmpeg command differs
+                src_lower = src_path.lower()
+                is_image_src = src_lower.endswith(('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif'))
+                
+                if is_image_src:
+                    # For images: simple format conversion with scaling
+                    cmd = [
+                        self._ffmpeg(),
+                        "-y",
+                        "-i",
+                        local_src,
+                        "-vf",
+                        "scale=240:-2",
+                        "-q:v",
+                        "8",
+                        "-an",
+                        out_path,
+                    ]
+                    print(f"[VTHUMB-DEBUG] Image source detected, using image conversion cmd")
+                else:
+                    # For videos: extract first frame
+                    cmd = [
+                        self._ffmpeg(),
+                        "-y",
+                        "-ss",
+                        "0",
+                        "-i",
+                        local_src,
+                        "-frames:v",
+                        "1",
+                        "-vf",
+                        "scale=240:-2",
+                        "-q:v",
+                        "8",
+                        "-an",
+                        out_path,
+                    ]
+                print(f"[VTHUMB-DEBUG] Running ffmpeg: {' '.join(cmd[:3])} ... {cmd[-1]}")
+                returncode, stdout_data, stderr = self._run_process(
                     cmd,
                     timeout=30,
                     startupinfo=self._startupinfo(),
                 )
+                print(f"[VTHUMB-DEBUG] ffmpeg returncode={returncode}, out_exists={os.path.exists(out_path)}")
                 if returncode != 0:
-                    print(
-                        f"FFmpeg first_frame error: {(stderr or b'').decode('utf-8', errors='ignore')}"
-                    )
+                    err_msg = (stderr or b'').decode('utf-8', errors='ignore')
+                    print(f"[VTHUMB-DEBUG] ffmpeg stderr: {err_msg[:500]}")
                     return self._json_err(500, "FFmpeg processing failed")
+                if not os.path.exists(out_path):
+                    print(f"[VTHUMB-DEBUG] WARNING: ffmpeg returned 0 but output file not created!")
+                    # Print stderr even on success=0 for diagnosis
+                    err_msg = (stderr or b'').decode('utf-8', errors='ignore')
+                    if err_msg:
+                        print(f"[VTHUMB-DEBUG] ffmpeg stderr (success=0): {err_msg[:500]}")
+                    return self._json_err(500, "FFmpeg produced no output")
             except subprocess.TimeoutExpired:
+                print(f"[VTHUMB-DEBUG] ffmpeg timeout")
                 return self._json_err(504, "FFmpeg process timeout")
             except Exception as exc:
+                print(f"[VTHUMB-DEBUG] ffmpeg exception: {exc}")
                 return self._json_err(500, f"Error extracting first frame: {str(exc)}")
+        else:
+            print(f"[VTHUMB-DEBUG] vthumb already exists, skipping ffmpeg")
 
         rel_path = f"output/VideoThumbs/{filename}"
+        print(f"[VTHUMB-DEBUG] returning rel_path={rel_path}")
         return self._json_ok({"success": True, "url": "/" + rel_path, "localPath": rel_path})
+
+    def _download_to_temp_file(self, url, ext=".mp4"):
+        """Download a remote URL to a temp file, return (local_path, error)"""
+        import tempfile
+        try:
+            import requests as _req_mod
+            resp = _req_mod.get(url, timeout=120, stream=True)
+            resp.raise_for_status()
+            
+            # Determine content type extension
+            content_type = resp.headers.get("Content-Type", "")
+            if "video" in content_type or "mp4" in content_type:
+                ext = ".mp4"
+            elif "webm" in content_type:
+                ext = ".webm"
+            
+            fd, tmp_path = tempfile.mkstemp(suffix=ext, prefix="cool_video_")
+            with os.fdopen(fd, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            return tmp_path, None
+        except Exception as exc:
+            return None, self._json_err(502, f"Failed to download remote video: {str(exc)}")
 
     def handle_post(self, handler, path):
         normalized = str(path or "").rstrip("/")

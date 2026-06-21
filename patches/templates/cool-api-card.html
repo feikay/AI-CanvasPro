@@ -1,0 +1,38 @@
+<!--
+  COOL (MJ API) API Key 卡片模板
+  此卡片应在 index.html 的 pane-api-input 中插入，
+  放在 APIMart 卡片之后、Agnes AI 卡片之前。
+
+  重要: 使用与 Agnes AI / 火山方舟 等其他卡片完全一致的 DOM 结构，
+        通过 id="providerKey-cool" 与前端 JS 绑定（appTopbarAndConfig.js）。
+  填充规则: apply-patches.js 会以 Agnes AI 卡片的 <div class="settings-card-badge">AG</div>
+            为锚点，把此卡片插在它前面。
+-->
+
+<!-- COOL (MJ API) 卡片 — 结构与其他厂商一致 -->
+<div class="settings-section settings-card">
+  <div class="settings-card-head">
+    <div class="settings-card-badge">CL</div>
+    <span class="settings-card-title">COOL (MJ API)</span>
+    <span class="settings-provider-status settings-provider-status--test" id="providerTestStatus-cool" hidden></span>
+    <span class="settings-provider-balance" id="providerBalance-cool" hidden></span>
+    <button type="button" class="settings-provider-test-btn" data-provider-test="cool" title="测试 COOL 连接" aria-label="测试 COOL 连接">
+      <svg class="settings-btn-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+      </svg>
+      <span class="settings-btn-label" data-i18n="settings.apiInput.testConnection">测试连接</span>
+    </button>
+    <button type="button" data-external-url="https://api.mjapi.cc.cd/" title="前往 COOL 获取 API Key" class="settings-getkey">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+        <polyline points="15 3 21 3 21 9"/>
+        <line x1="10" y1="14" x2="21" y2="3"/>
+      </svg>
+      <span data-i18n="settings.apiInput.getKey">获取 Key</span>
+    </button>
+  </div>
+  <div class="settings-label" data-i18n="settings.apiInput.apiKey">API 密钥</div>
+  <input type="password" id="providerKey-cool" class="settings-input" placeholder="sk-...">
+  <div class="settings-desc" style="margin-top:6px">接口地址固定为 https://api.mjapi.cc.cd · 图片 10 个 + 视频 25 个模型</div>
+</div>
