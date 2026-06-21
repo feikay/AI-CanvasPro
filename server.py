@@ -100,6 +100,9 @@ def _build_apimart_presign_url(api_url):
     except Exception:
         return "https://apib.ai/api/upload/presign"
 STATIC_VIDEO_CACHE_CONTROL = "public, max-age=86400"
+# JS/CSS 文件使用版本号做缓存控制（如 ?v=2026041901），安全缓存 1 小时
+# 修复 NAT/Docker 部署下大量 ES Module 并发请求超时问题
+STATIC_ASSET_CACHE_CONTROL = "public, max-age=3600, must-revalidate"
 NO_STORE_CACHE_CONTROL = "no-store, no-cache, must-revalidate, max-age=0"
 SMART_CLIP_MIN_SEGMENTS = 2
 SMART_CLIP_MAX_SEGMENTS = 25
@@ -145,11 +148,21 @@ def _is_cacheable_static_video_request(request_path):
     return ext.lower() in STATIC_VIDEO_CACHE_EXTS
 
 
+def _is_cacheable_static_asset(request_path):
+    decoded_path = _normalize_request_path(request_path)
+    if not decoded_path:
+        return False
+    _, ext = os.path.splitext(decoded_path)
+    return ext.lower() in (".css", ".js", ".mjs", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".woff", ".woff2", ".ttf", ".eot")
+
+
 def _resolve_static_cache_control(request_path):
     if _is_cacheable_derived_media_request(request_path):
         return DERIVED_MEDIA_CACHE_CONTROL
     if _is_cacheable_static_video_request(request_path):
         return STATIC_VIDEO_CACHE_CONTROL
+    if _is_cacheable_static_asset(request_path):
+        return STATIC_ASSET_CACHE_CONTROL
     return NO_STORE_CACHE_CONTROL
 
 def _get_int_env(name, default, min_value=None):
@@ -2446,6 +2459,9 @@ def _resolve_local_virtual_path(src_path):
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    # 启用 HTTP/1.1 keep-alive：一个 TCP 连接可承载多个请求
+    # 修复公网 NAT 部署下大量 ES Module 并发请求导致的 NAT 表耗尽问题
+    protocol_version = "HTTP/1.1"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
