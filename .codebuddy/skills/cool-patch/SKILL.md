@@ -100,3 +100,46 @@ names. The following execution manifests MUST use base model names:
 The `4K` resolution is controlled by the `resolution` parameter, not the model name.
 
 Also verify `omnihuman_1_5` is NOT present in the image manifest (it is a video model).
+
+## Important: Troubleshooting — COOL Card Duplicates or Mixed with Agnes
+
+If after applying patches the settings page shows:
+- COOL and Agnes cards visually mixed/overlapping
+- Multiple COOL cards stacked
+- Agnes card structure broken (missing outer wrapper)
+
+**Root causes (historical bugs in v1.0.0, fixed)**:
+
+### Bug 1: Idempotency check failure → duplicate cards
+- **Symptom**: Running `apply-patches.js` multiple times inserts multiple COOL cards
+- **Root cause**: Idempotency check used `data-provider="cool"`, but the template actually uses `data-provider-test="cool"`, so the check never matched
+- **Fix**: Use `id="providerKey-cool"` as the idempotency marker (unique input id)
+
+### Bug 2: Wrong insertion anchor → Agnes structure broken
+- **Symptom**: COOL card inserted INSIDE Agnes card's `<div class="settings-card-head">`, breaking Agnes layout
+- **Root cause**: Anchor was `<div class="settings-card-badge">AG</div>` (Agnes internal badge), so `replace()` put COOL HTML inside Agnes's head div
+- **Fix**: Anchor must be the FULL outer wrapper: `<div class="settings-section settings-card"><div class="settings-card-head"><div class="settings-card-badge">AG</div>`
+
+### Recovery procedure (if bugs occur)
+```bash
+# 1. Restore index.html from clean master
+git checkout master -- index.html
+
+# 2. Re-run patch (with fixed apply-patches.js)
+node patches/apply-patches.js
+
+# 3. Verify only ONE COOL card exists
+# Search for 'providerKey-cool' — should appear exactly once
+```
+
+### Verification checklist
+- [ ] `providerKey-cool` appears exactly once in `index.html`
+- [ ] `settings-card-badge">CL` appears exactly once (the COOL badge)
+- [ ] `settings-card-badge">AG` appears exactly once in actual HTML (ignore comments)
+- [ ] COOL card is BEFORE Agnes card in source order
+- [ ] Both cards have independent `<div class="settings-section settings-card">` outer wrappers
+
+## Important: Browser Cache
+
+After applying patches, the user may need to **hard refresh** the browser
+(`Ctrl+Shift+R` or `Ctrl+F5`) to see the changes, as `index.html` is heavily cached.

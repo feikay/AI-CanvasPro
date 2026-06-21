@@ -38,18 +38,34 @@ function write(path, content) {
 // ============================================================
 // 1. index.html — 在 APIMart 卡片后插入 COOL 卡片
 // ============================================================
+// 【坑点记录 v1.0.0 → 修复后】
+// ❌ 错误1: 幂等检查用 'data-provider="cool"'，但模板中实际是
+//           'data-provider-test="cool"'，导致检查永远不匹配，
+//           每次运行都会重复插入卡片（曾一次产生 3 个重复）。
+// ✅ 修复1: 改用 'id="providerKey-cool"' 作为幂等标记。
+//
+// ❌ 错误2: 插入锚点用 '<div class="settings-card-badge">AG</div>'
+//           （Agnes 卡片内部的 badge），导致 COOL 卡片被插到
+//           Agnes 的 <div class="settings-card-head"> 里面，
+//           破坏 Agnes 结构，UI 显示两张卡片混在一起。
+// ✅ 修复2: 改用完整外层标记 '<div class="settings-section settings-card">
+//           <div class="settings-card-head"><div class="settings-card-badge">AG</div>'
+//           作为锚点，确保 COOL 卡片插入在 Agnes 卡片之前（独立）。
+// ============================================================
 function patchIndexHtml() {
   console.log('\n📄 自动修补: index.html');
   const html = read('index.html');
 
-  // 幂等检查：如果 COOL 卡片已存在，跳过
+  // 幂等检查：使用唯一的 input id 作为标记（不能用 data-provider，
+  // 因为模板中实际是 data-provider-test，会导致检查失效）
   if (html.includes('id="providerKey-cool"')) {
     console.log('   ⏭️ COOL 卡片已存在，跳过');
     return true;
   }
 
-  // Agnes AI 卡片起始标记（唯一）
-  const agnesMarker = '<div class="settings-card-badge">AG</div>';
+  // Agnes AI 卡片外层起始标记（必须用完整外层 div，不能用内部 badge，
+  // 否则 COOL 卡片会插入到 Agnes 的 card-head 内部，破坏结构）
+  const agnesMarker = '<div class="settings-section settings-card"><div class="settings-card-head"><div class="settings-card-badge">AG</div>';
   if (!html.includes(agnesMarker)) {
     console.log('   ❌ 未找到 Agnes AI 卡片，无法自动插入');
     console.log('   📋 请手动操作: 在 pane-api-input 中 APIMart 卡片后插入 COOL 卡片');
