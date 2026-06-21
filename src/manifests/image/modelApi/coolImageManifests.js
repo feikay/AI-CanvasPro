@@ -1,6 +1,6 @@
 /**
  * COOL 图片模型清单 (MJ API)
- * 共 10 个图片模型
+ * 共 9 个图片模型
  * 
  * 采用 modelApi 适配器类型，通过 bodyResolver='coolGenerate' 委托给 CoolAdapter 构建请求
  */
@@ -23,7 +23,6 @@ export const COOL_NANO_BANANA_2_MODEL_ID = 'cool/nano_banana_2';
 export const COOL_NANO_BANANA_2_4K_MODEL_ID = 'cool/nano_banana_2_4k';
 export const COOL_NANO_BANANA_PRO_MODEL_ID = 'cool/nano_banana_pro';
 export const COOL_NANO_BANANA_PRO_4K_MODEL_ID = 'cool/nano_banana_pro_4k';
-export const COOL_OMNIHUMAN_1_5_MODEL_ID = 'cool/omnihuman_1_5';
 export const COOL_SEEDREAM_4_5_MODEL_ID = 'cool/seedream_4_5';
 
 // ---- Execution IDs ----
@@ -35,7 +34,6 @@ export const COOL_NANO_BANANA_2_EXECUTION_ID = 'cool.model-api.nano-banana-2.v1'
 export const COOL_NANO_BANANA_2_4K_EXECUTION_ID = 'cool.model-api.nano-banana-2-4k.v1';
 export const COOL_NANO_BANANA_PRO_EXECUTION_ID = 'cool.model-api.nano-banana-pro.v1';
 export const COOL_NANO_BANANA_PRO_4K_EXECUTION_ID = 'cool.model-api.nano-banana-pro-4k.v1';
-export const COOL_OMNIHUMAN_1_5_EXECUTION_ID = 'cool.model-api.omnihuman-15.v1';
 export const COOL_SEEDREAM_4_5_EXECUTION_ID = 'cool.model-api.seedream-45.v1';
 
 // ---- Image Size Field (COOL uses 2K/4K, selective 1K) ----
@@ -274,27 +272,7 @@ export const coolImageModelApiModelManifests = Object.freeze([
     }),
   }),
 
-  // 9. OmniHuman 1.5
-  createImageModelApiManifest({
-    modelId: COOL_OMNIHUMAN_1_5_MODEL_ID,
-    executionId: COOL_OMNIHUMAN_1_5_EXECUTION_ID,
-    provider: 'cool',
-    displayName: 'OmniHuman 1.5',
-    description: 'OmniHuman 数字人生成 (COOL)',
-    inputSlots: IMAGE_MODEL_API_14_IMAGE_INPUT_SLOTS,
-    fields: [COOL_IMAGE_SIZE_2K4K, ASPECT_RATIO_FIELD, BATCH_SIZE_FIELD],
-    extensions: Object.freeze({
-      imageMenu: Object.freeze({
-        group: 'cool',
-        order: 60,
-        title: 'OmniHuman 1.5',
-        subtitle: 'COOL · 0.07 积分/次',
-        gap: 10,
-      }),
-    }),
-  }),
-
-  // 10. Seedream 4.5
+  // 9. Seedream 4.5
   createImageModelApiManifest({
     modelId: COOL_SEEDREAM_4_5_MODEL_ID,
     executionId: COOL_SEEDREAM_4_5_EXECUTION_ID,
@@ -315,7 +293,7 @@ export const coolImageModelApiModelManifests = Object.freeze([
   }),
 ]);
 
-// ============== 执行清单 (10个) ==============
+// ============== 执行清单 (9个) ==============
 
 export const coolImageModelApiExecutionManifests = Object.freeze([
   createCoolImageExecution({
@@ -328,7 +306,7 @@ export const coolImageModelApiExecutionManifests = Object.freeze([
   }),
   createCoolImageExecution({
     id: COOL_GPT_IMAGE_2_4K_EXECUTION_ID,
-    model: 'gpt_image_2_4k',
+    model: 'gpt_image_2',
   }),
   createCoolImageExecution({
     id: COOL_MIDJOURNEY_V7_EXECUTION_ID,
@@ -340,7 +318,7 @@ export const coolImageModelApiExecutionManifests = Object.freeze([
   }),
   createCoolImageExecution({
     id: COOL_NANO_BANANA_2_4K_EXECUTION_ID,
-    model: 'nano_banana_2_4k',
+    model: 'nano_banana_2',
   }),
   createCoolImageExecution({
     id: COOL_NANO_BANANA_PRO_EXECUTION_ID,
@@ -348,11 +326,7 @@ export const coolImageModelApiExecutionManifests = Object.freeze([
   }),
   createCoolImageExecution({
     id: COOL_NANO_BANANA_PRO_4K_EXECUTION_ID,
-    model: 'nano_banana_pro_4k',
-  }),
-  createCoolImageExecution({
-    id: COOL_OMNIHUMAN_1_5_EXECUTION_ID,
-    model: 'omnihuman_1_5',
+    model: 'nano_banana_pro',
   }),
   createCoolImageExecution({
     id: COOL_SEEDREAM_4_5_EXECUTION_ID,
