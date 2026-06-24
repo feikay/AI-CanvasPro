@@ -100,9 +100,6 @@ def _build_apimart_presign_url(api_url):
     except Exception:
         return "https://apib.ai/api/upload/presign"
 STATIC_VIDEO_CACHE_CONTROL = "public, max-age=86400"
-# JS/CSS 文件使用版本号做缓存控制（如 ?v=2026041901），安全缓存 1 小时
-# 修复 NAT/Docker 部署下大量 ES Module 并发请求超时问题
-STATIC_ASSET_CACHE_CONTROL = "public, max-age=3600, must-revalidate"
 NO_STORE_CACHE_CONTROL = "no-store, no-cache, must-revalidate, max-age=0"
 SMART_CLIP_MIN_SEGMENTS = 2
 SMART_CLIP_MAX_SEGMENTS = 25
@@ -148,21 +145,11 @@ def _is_cacheable_static_video_request(request_path):
     return ext.lower() in STATIC_VIDEO_CACHE_EXTS
 
 
-def _is_cacheable_static_asset(request_path):
-    decoded_path = _normalize_request_path(request_path)
-    if not decoded_path:
-        return False
-    _, ext = os.path.splitext(decoded_path)
-    return ext.lower() in (".css", ".js", ".mjs", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".woff", ".woff2", ".ttf", ".eot")
-
-
 def _resolve_static_cache_control(request_path):
     if _is_cacheable_derived_media_request(request_path):
         return DERIVED_MEDIA_CACHE_CONTROL
     if _is_cacheable_static_video_request(request_path):
         return STATIC_VIDEO_CACHE_CONTROL
-    if _is_cacheable_static_asset(request_path):
-        return STATIC_ASSET_CACHE_CONTROL
     return NO_STORE_CACHE_CONTROL
 
 def _get_int_env(name, default, min_value=None):
@@ -1588,6 +1575,21 @@ def _json_err(handler, code, msg):
         pass
 
 
+def _send_proxy_response(handler, status_code, body_bytes, content_type="application/json; charset=utf-8"):
+    """发送代理响应，确保包含 Content-Length（HTTP/1.1 keep-alive 必需）"""
+    if isinstance(body_bytes, str):
+        body_bytes = body_bytes.encode("utf-8")
+    handler.send_response(status_code)
+    handler.send_header("Content-Type", content_type)
+    handler.send_header("Content-Length", str(len(body_bytes)))
+    _send_cors_origin_header(handler)
+    handler.end_headers()
+    try:
+        handler.wfile.write(body_bytes)
+    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+        pass
+
+
 def _send_route_response(handler, response):
     if not isinstance(response, dict):
         raise ValueError("Route response must be a dict")
@@ -1795,7 +1797,6 @@ REMOTE_PROXY_ROUTE_SERVICE = RemoteProxyRouteService(
     read_body=_read_body,
     subscription_gate_service_getter=lambda: SUBSCRIPTION_GATE_SERVICE,
     video_vip_workflow_ids=VIDEO_VIP_WORKFLOW_IDS,
-    output_dir_getter=lambda: OUTPUT_DIR,
 )
 
 
@@ -2459,9 +2460,6 @@ def _resolve_local_virtual_path(src_path):
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
-    # 启用 HTTP/1.1 keep-alive：一个 TCP 连接可承载多个请求
-    # 修复公网 NAT 部署下大量 ES Module 并发请求导致的 NAT 表耗尽问题
-    protocol_version = "HTTP/1.1"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
@@ -3120,11 +3118,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         headers=request_headers,
                         timeout=900,
                     )
-                    self.send_response(resp.status_code)
-                    self.send_header("Content-Type", "application/json; charset=utf-8")
-                    _send_cors_origin_header(self)
-                    self.end_headers()
-                    self.wfile.write(resp.content)
+                    _send_proxy_response(self, resp.status_code, resp.content)
                 except ImportError:
                     import urllib.request, urllib.error
                     req_body = json.dumps(payload).encode("utf-8")
@@ -3135,17 +3129,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     try:
                         with urllib.request.urlopen(req, timeout=900) as resp:
                             resp_data = resp.read()
-                        self.send_response(resp.status)
-                        self.send_header("Content-Type", "application/json; charset=utf-8")
-                        _send_cors_origin_header(self)
-                        self.end_headers()
-                        self.wfile.write(resp_data)
+                        _send_proxy_response(self, resp.status, resp_data)
                     except urllib.error.HTTPError as e:
-                        self.send_response(e.code)
-                        self.send_header("Content-Type", "application/json; charset=utf-8")
-                        _send_cors_origin_header(self)
-                        self.end_headers()
-                        self.wfile.write(e.read())
+                        _send_proxy_response(self, e.code, e.read())
             except Exception as e:
                 _json_err(self, 500, f"Video matting proxy error: {repr(e)}")
             return
@@ -3164,30 +3150,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             local_authorization_payload = dict(data) if isinstance(data, dict) else {}
             for key in SUBSCRIPTION_AUTHORIZATION_ID_KEYS:
                 data.pop(key, None)
-            # COOL API: convert image_urls / video_urls to files format and inject @图片/@视频 references
-            if "mjapi.cc.cd" in api_url:
-                files = []
-                refs = []
-                image_urls = data.pop("image_urls", None) if isinstance(data, dict) else None
-                if image_urls and isinstance(image_urls, list):
-                    for idx, url in enumerate(image_urls, 1):
-                        url_str = str(url or "").strip()
-                        if url_str:
-                            files.append({"url": url_str, "type": "image"})
-                            refs.append(f"@图片{idx}")
-                video_urls = data.pop("video_urls", None) if isinstance(data, dict) else None
-                if video_urls and isinstance(video_urls, list):
-                    for idx, url in enumerate(video_urls, 1):
-                        url_str = str(url or "").strip()
-                        if url_str:
-                            files.append({"url": url_str, "type": "video"})
-                            refs.append(f"@视频{idx}")
-                if files:
-                    data["files"] = files
-                    prompt = str(data.get("prompt", "") or "").strip()
-                    ref_str = " ".join(refs)
-                    if ref_str and ref_str not in prompt:
-                        data["prompt"] = f"{prompt} {ref_str}".strip() if prompt else ref_str
             def _extract_task_id_from_text(raw_text):
                 text = str(raw_text or "")
                 if not text:
@@ -3323,11 +3285,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                     return
 
                         full_content = b"".join(chunks)
-                        self.send_response(resp.status_code)
-                        self.send_header("Content-Type", "application/json; charset=utf-8")
-                        _send_cors_origin_header(self)
-                        self.end_headers()
-                        self.wfile.write(full_content)
+                        _send_proxy_response(self, resp.status_code, full_content)
                         return
                     except _req.exceptions.ProxyError:
                         if attempt_idx == len(retry_delays) - 1:
@@ -3359,18 +3317,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     try:
                         with urllib.request.urlopen(req, timeout=900) as resp:
                             resp_data = resp.read()
-                        self.send_response(resp.status)
-                        self.send_header("Content-Type", "application/json; charset=utf-8")
-                        _send_cors_origin_header(self)
-                        self.end_headers()
-                        self.wfile.write(resp_data)
+                        _send_proxy_response(self, resp.status, resp_data)
                         return
                     except urllib.error.HTTPError as e:
-                        self.send_response(e.code)
-                        self.send_header("Content-Type", "application/json; charset=utf-8")
-                        _send_cors_origin_header(self)
-                        self.end_headers()
-                        self.wfile.write(e.read())
+                        _send_proxy_response(self, e.code, e.read())
                         return
                     except urllib.error.URLError as e:
                         msg = repr(e)
@@ -3475,11 +3425,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         # 解析失败时保留原始响应
                         pass
                 
-                self.send_response(resp.status_code)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                _send_cors_origin_header(self)
-                self.end_headers()
-                self.wfile.write(resp_text.encode('utf-8'))
+                _send_proxy_response(self, resp.status_code, resp_text.encode('utf-8'))
             except ImportError:
                 # Fallback to urllib if requests is not installed
                 import urllib.request
@@ -3508,17 +3454,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         except Exception:
                             pass
 
-                    self.send_response(resp.status)
-                    self.send_header("Content-Type", "application/json; charset=utf-8")
-                    _send_cors_origin_header(self)
-                    self.end_headers()
-                    self.wfile.write(resp_text.encode('utf-8'))
+                    _send_proxy_response(self, resp.status, resp_text.encode('utf-8'))
                 except urllib.error.HTTPError as e:
-                    self.send_response(e.code)
-                    self.send_header("Content-Type", "application/json; charset=utf-8")
-                    _send_cors_origin_header(self)
-                    self.end_headers()
-                    self.wfile.write(e.read())
+                    _send_proxy_response(self, e.code, e.read())
             except Exception as e:
                 _json_err(self, 500, repr(e))
             return
