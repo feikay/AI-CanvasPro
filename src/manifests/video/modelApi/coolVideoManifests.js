@@ -120,10 +120,17 @@ const COOL_VIDEO_DURATION_FIELD = Object.freeze({
   id: 'duration', type: 'segmented', placement: 'resolution', variant: 'pillMenu',
   label: '时长', defaultValue: 5,
   options: Object.freeze([
-    Object.freeze({ value: 2, label: '2s' }),
+    Object.freeze({ value: 4, label: '4s' }),
     Object.freeze({ value: 5, label: '5s' }),
+    Object.freeze({ value: 6, label: '6s' }),
+    Object.freeze({ value: 7, label: '7s' }),
     Object.freeze({ value: 8, label: '8s' }),
+    Object.freeze({ value: 9, label: '9s' }),
     Object.freeze({ value: 10, label: '10s' }),
+    Object.freeze({ value: 11, label: '11s' }),
+    Object.freeze({ value: 12, label: '12s' }),
+    Object.freeze({ value: 13, label: '13s' }),
+    Object.freeze({ value: 14, label: '14s' }),
     Object.freeze({ value: 15, label: '15s' }),
   ]),
 });
